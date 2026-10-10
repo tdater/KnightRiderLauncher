@@ -60,8 +60,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
@@ -75,6 +77,7 @@ import com.aiconsole.knightriderlauncher.browser.BrowserSession
 import com.aiconsole.knightriderlauncher.browser.WebMedia
 import com.aiconsole.knightriderlauncher.data.AppLists
 import com.aiconsole.knightriderlauncher.data.AppUsage
+import com.aiconsole.knightriderlauncher.data.DeviceProfile
 import com.aiconsole.knightriderlauncher.data.EdgeSwipe
 import com.aiconsole.knightriderlauncher.data.HardwareKeys
 import com.aiconsole.knightriderlauncher.data.InstalledApps
@@ -100,11 +103,13 @@ import com.aiconsole.knightriderlauncher.ui.gauges.GaugeUi
 import com.aiconsole.knightriderlauncher.ui.panes.AiPane
 import com.aiconsole.knightriderlauncher.ui.panes.AppDrawerPane
 import com.aiconsole.knightriderlauncher.ui.panes.ControlDock
+import com.aiconsole.knightriderlauncher.ui.panes.DockBar
 import com.aiconsole.knightriderlauncher.ui.panes.DrivingPanel
 import com.aiconsole.knightriderlauncher.ui.panes.GamesPane
 import com.aiconsole.knightriderlauncher.ui.panes.GaugeWallPane
 import com.aiconsole.knightriderlauncher.ui.panes.HudState
 import com.aiconsole.knightriderlauncher.ui.panes.MediaPane
+import com.aiconsole.knightriderlauncher.ui.panes.NavRail
 import com.aiconsole.knightriderlauncher.ui.panes.NavigationPane
 import com.aiconsole.knightriderlauncher.ui.panes.QuickSettingsPanel
 import com.aiconsole.knightriderlauncher.ui.panes.Screensaver
@@ -122,6 +127,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudOverlay
 import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.KnightRiderLauncherTheme
+import com.aiconsole.knightriderlauncher.ui.theme.LocalLiteMode
 import com.aiconsole.knightriderlauncher.ui.theme.MatrixRain
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
@@ -174,12 +180,23 @@ class MainActivity : ComponentActivity() {
                 val statusStrip by settings.statusStrip.state.collectAsState()
                 val screensaverMinutes by settings.screensaverMinutes.state.collectAsState()
                 val drivingLayout by settings.drivingMode.state.collectAsState()
+                val uiScale by settings.uiScale.state.collectAsState()
+                val lite by kitt.lite.collectAsState()
                 val obdMoving by kitt.obd.moving.collectAsState()
                 val gpsFix by kitt.gps.fix.collectAsState()
                 val pinned = remember(pinnedStored) { AppLists.decode(pinnedStored) }
                 val homeApps = remember(apps, pinned, hiddenStored) {
                     AppLists.homeSelection(apps, LauncherApp::key, pinned, AppLists.decode(hiddenStored).toSet())
                 }
+                // Fit 7"–10" screens: draw the whole launcher a little smaller or larger than the
+                // head unit's density says (Auto picks from the screen size).
+                val configuration = LocalConfiguration.current
+                val baseDensity = LocalDensity.current
+                val scale = DeviceProfile.scale(uiScale, configuration.screenWidthDp, configuration.screenHeightDp)
+                CompositionLocalProvider(
+                    LocalDensity provides Density(baseDensity.density * scale, baseDensity.fontScale),
+                    LocalLiteMode provides lite
+                ) {
                 LauncherRoot(
                     apps = apps,
                     homeApps = homeApps,
@@ -199,9 +216,11 @@ class MainActivity : ComponentActivity() {
                     onDismissAlert = { kitt.alerts.dismiss() },
                     showMap = showMap,
                     nav = if (navNotifications) navInstruction else null,
-                    rain = rain && ThemeState.theme == UiTheme.Colorado,
+                    // The Matrix rain is pure eye candy: off in lite mode.
+                    rain = rain && !lite && ThemeState.theme == UiTheme.Colorado,
                     night = night
                 )
+                }
             }
         }
         // A playing web page swiped off screen is parked here, attached but out of sight, so its
@@ -235,6 +254,7 @@ class MainActivity : ComponentActivity() {
         kitt.startup.onLauncherShown()
         kitt.wakeWord.setVisible(true)
         kitt.weather.start()
+        WebMedia.setLauncherVisible(true)
         startVehicleSystems()
     }
 
@@ -245,6 +265,7 @@ class MainActivity : ComponentActivity() {
         kitt.gps.stop()
         kitt.wakeWord.setVisible(false)
         kitt.weather.stop()
+        WebMedia.setLauncherVisible(false)
         runCatching { kitt.widgetHost.stopListening() }
         super.onStop()
     }
@@ -381,13 +402,12 @@ private fun rememberDashState(app: KittApplication): DashState {
     )
 }
 
-private val ScannerHeight = 22.dp
-
 /**
  * Responsive shell under a permanent KITT scanner strip.
  *
+ * Landscape (7"–10" head units and other wide screens): a side rail with KITT and the
+ * page buttons, the pages, and a slim one-row dock, so the pages get nearly the full height.
  * Tall (portrait head units, e.g. 9:16): stacked 50% map / 35% grid / 15% dock.
- * Wide (16:9 landscape): map and grid side by side above a 20% dock.
  * Full-screen features are overlays drawn below the scanner, so it never disappears.
  */
 @Composable
@@ -444,16 +464,16 @@ fun LauncherRoot(
     }
     val stream = remember {
         val app = context.applicationContext as KittApplication
-        BrowserSession("stream", app.settings, app.userscripts)
+        BrowserSession("stream", app.settings, app.userscripts, lite = { app.lite.value })
     }
     // AI and Games keep their tabs (and sign-ins) while you move between pages.
     val aiBrowser = remember {
         val app = context.applicationContext as KittApplication
-        BrowserSession("ai", app.settings, app.userscripts)
+        BrowserSession("ai", app.settings, app.userscripts, lite = { app.lite.value })
     }
     val gamesBrowser = remember {
         val app = context.applicationContext as KittApplication
-        BrowserSession("games", app.settings, app.userscripts, gamepad = true)
+        BrowserSession("games", app.settings, app.userscripts, gamepad = true, lite = { app.lite.value })
     }
     DisposableEffect(aiBrowser, gamesBrowser) {
         onDispose {
@@ -576,21 +596,24 @@ fun LauncherRoot(
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
-            KittScanner(Modifier.fillMaxWidth().height(ScannerHeight), alert = dash.alert?.severe == true, shift = dash.shift)
+            val configuration = LocalConfiguration.current
+            val scannerHeight = DeviceProfile.scannerHeightDp(configuration.screenHeightDp.toFloat()).dp
+            KittScanner(Modifier.fillMaxWidth().height(scannerHeight), alert = dash.alert?.severe == true, shift = dash.shift)
             if (statusStrip) StatusStrip(onClick = { quickSettings = !quickSettings })
 
-            val configuration = LocalConfiguration.current
+            // From the screen's shape, not the space left: the on-screen keyboard shrinks
+            // maxHeight, and flipping the layout then would rebuild the map and drop its search.
+            val isTall = configuration.screenHeightDp >= configuration.screenWidthDp * 1.2f
+            val rail = DeviceProfile.useRail(configuration.screenWidthDp.toFloat(), configuration.screenHeightDp.toFloat())
             BoxWithConstraints(
                 Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(8.dp)
+                    .padding(if (rail) 6.dp else 8.dp)
             ) {
-                // From the screen's shape, not the space left: the on-screen keyboard shrinks
-                // maxHeight, and flipping the layout then would rebuild the map and drop its search.
-                val isTall = configuration.screenHeightDp >= configuration.screenWidthDp * 1.2f
-                val gap = 8.dp
+                val gap = if (rail) 6.dp else 8.dp
                 val dockHeight = (maxHeight * if (isTall) 0.15f else 0.20f).coerceIn(112.dp, 280.dp)
+                val dockBarHeight = (maxHeight * 0.11f).coerceIn(48.dp, 64.dp)
                 val portraitCellWidth = if (maxWidth >= 600.dp) 150.dp else 110.dp
                 val open = { target: LauncherOverlay -> overlay = target }
                 val onDrive = pager.currentPage == HomePage.Drive.ordinal
@@ -651,10 +674,10 @@ fun LauncherRoot(
                     }
                 }
 
-                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                val pages = @Composable { pagesModifier: Modifier ->
                     HorizontalPager(
                         state = pager,
-                        modifier = Modifier.fillMaxWidth().weight(1f).edgeSwipe(pager, scope),
+                        modifier = pagesModifier.edgeSwipe(pager, scope),
                         // Swipe anywhere outside the map and web pages (they keep their own drags) to change page.
                         userScrollEnabled = true,
                         pageSpacing = gap
@@ -673,7 +696,7 @@ fun LauncherRoot(
                                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                                         navPane(Modifier.fillMaxHeight().weight(0.60f))
                                         if (driving) drivingPanel(Modifier.fillMaxHeight().weight(0.40f))
-                                        else grid(Modifier.fillMaxHeight().weight(0.40f), 120.dp)
+                                        else grid(Modifier.fillMaxHeight().weight(0.40f), if (rail) 100.dp else 120.dp)
                                     }
                                 }
                                 HomePage.Gauges -> GaugeWallPane(
@@ -691,8 +714,39 @@ fun LauncherRoot(
                             }
                         }
                     }
-                    PageTabs(pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
-                    dock()
+                }
+                val selectPage = { page: Int -> scope.launch { pager.animateScrollToPage(page) }; Unit }
+
+                if (rail) {
+                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        NavRail(
+                            labels = HomePage.entries.map { it.label },
+                            current = pager.currentPage,
+                            onSelect = selectPage,
+                            onKitt = {
+                                autoListen = false
+                                open(LauncherOverlay.Assistant)
+                            },
+                            kittSpeaking = dash.kittSpeaking,
+                            modifier = Modifier.fillMaxHeight().width(RailWidth)
+                        )
+                        Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                            pages(Modifier.fillMaxWidth().weight(1f))
+                            DockBar(
+                                onDiagnostics = { open(LauncherOverlay.Diagnostics) },
+                                onConfig = { open(LauncherOverlay.Config) },
+                                onTrip = { open(LauncherOverlay.Trips) },
+                                metric = dash.metric,
+                                modifier = Modifier.fillMaxWidth().height(dockBarHeight)
+                            )
+                        }
+                    }
+                } else {
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                        pages(Modifier.fillMaxWidth().weight(1f))
+                        PageTabs(pager.currentPage, selectPage)
+                        dock()
+                    }
                 }
 
                 dash.alert?.let { alert ->
@@ -737,6 +791,8 @@ fun LauncherRoot(
         }
     }
 }
+
+private val RailWidth = 96.dp
 
 private const val DRIVING_ENTER_MS = 15_000L
 private const val DRIVING_EXIT_MS = 60_000L
@@ -830,6 +886,14 @@ private fun AlertBanner(alert: KittAlert, onDismiss: () -> Unit, modifier: Modif
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@Preview(name = "7-inch head unit 1024x600", widthDp = 1024, heightDp = 600)
+@Composable
+private fun LauncherSevenInchPreview() {
+    KnightRiderLauncherTheme {
+        LauncherRoot(apps = emptyList(), onAppClick = {})
     }
 }
 

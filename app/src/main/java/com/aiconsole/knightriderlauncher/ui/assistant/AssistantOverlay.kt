@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -145,12 +146,14 @@ fun AssistantOverlay(
             )
         }
     ) {
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val modulator = @Composable { m: Modifier ->
             VoiceModulator(
                 active = listening != null || thinking || speaking,
                 level = listening?.level,
-                modifier = Modifier.fillMaxWidth().height(110.dp)
+                modifier = m
             )
+        }
+        val statusText = @Composable {
             Text(
                 text = status,
                 modifier = Modifier.fillMaxWidth(),
@@ -160,15 +163,17 @@ fun AssistantOverlay(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-
+        }
+        val conversation = @Composable { m: Modifier ->
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = m,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(exchanges, key = { it.id }) { ExchangeCard(it) }
             }
-
+        }
+        val handoff = @Composable {
             if (handoffApps.isNotEmpty()) {
                 // Use the driver's own subscriptions via the official apps.
                 Row(
@@ -190,7 +195,8 @@ fun AssistantOverlay(
                     }
                 }
             }
-
+        }
+        val promptRow = @Composable {
             Row(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -209,28 +215,67 @@ fun AssistantOverlay(
                     enabled = input.isNotBlank() && !thinking
                 )
             }
+        }
+        val speakButton = @Composable { m: Modifier ->
+            KittButton(
+                label = if (listening != null) "Stop" else "Speak",
+                onClick = ::toggleMic,
+                modifier = m,
+                color = ScannerRed,
+                active = true,
+                enabled = !thinking
+            )
+        }
+        val voiceButton = @Composable { m: Modifier ->
+            KittButton(
+                label = if (voiceReply) "Mute" else "Voice",
+                onClick = viewModel::toggleVoiceReply,
+                modifier = m,
+                color = LedGreen,
+                active = voiceReply
+            )
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth().height(68.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                KittButton(
-                    label = if (listening != null) "Stop" else "Speak",
-                    onClick = ::toggleMic,
-                    modifier = Modifier.weight(2f).fillMaxHeight(),
-                    color = ScannerRed,
-                    active = true,
-                    enabled = !thinking
-                )
-                KittButton(
-                    label = if (voiceReply) "Mute" else "Voice",
-                    onClick = viewModel::toggleVoiceReply,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    color = LedGreen,
-                    active = voiceReply
-                )
-                KittButton("Reset", viewModel::clearConversation, Modifier.weight(0.8f).fillMaxHeight(), DashAmber)
-                KittButton("Close", onDismiss, Modifier.weight(1f).fillMaxHeight(), DashGrey)
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            if (maxWidth > maxHeight * 1.3f) {
+                // Landscape head unit: KITT's face and the big controls on the left, the
+                // conversation and keyboard input on the right, so answers get the full height.
+                Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(0.36f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        modulator(Modifier.fillMaxWidth().weight(1f))
+                        statusText()
+                        Row(Modifier.fillMaxWidth().height(60.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            speakButton(Modifier.weight(1.4f).fillMaxHeight())
+                            voiceButton(Modifier.weight(1f).fillMaxHeight())
+                        }
+                        Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            KittButton("Reset", viewModel::clearConversation, Modifier.weight(1f).fillMaxHeight(), DashAmber)
+                            KittButton("Close", onDismiss, Modifier.weight(1f).fillMaxHeight(), DashGrey)
+                        }
+                    }
+                    Column(Modifier.weight(0.64f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        conversation(Modifier.fillMaxWidth().weight(1f))
+                        handoff()
+                        promptRow()
+                    }
+                }
+            } else {
+                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    modulator(Modifier.fillMaxWidth().height(110.dp))
+                    statusText()
+                    conversation(Modifier.fillMaxWidth().weight(1f))
+                    handoff()
+                    promptRow()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(68.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        speakButton(Modifier.weight(2f).fillMaxHeight())
+                        voiceButton(Modifier.weight(1f).fillMaxHeight())
+                        KittButton("Reset", viewModel::clearConversation, Modifier.weight(0.8f).fillMaxHeight(), DashAmber)
+                        KittButton("Close", onDismiss, Modifier.weight(1f).fillMaxHeight(), DashGrey)
+                    }
+                }
             }
         }
     }

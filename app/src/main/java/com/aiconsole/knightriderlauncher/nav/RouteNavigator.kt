@@ -2,7 +2,6 @@ package com.aiconsole.knightriderlauncher.nav
 
 import com.aiconsole.knightriderlauncher.assistant.TextToSpeechHelper
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
-import com.aiconsole.knightriderlauncher.data.settings.PersonaStyle
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -218,7 +217,7 @@ class RouteNavigator(
         if (settings.navVoice.value) voice.speak(RouteRules.spoken(kind, plain, unfiltered(), Random.nextInt()), interrupt = false)
     }
 
-    private fun unfiltered() = settings.persona.value == PersonaStyle.Unfiltered
+    private fun unfiltered() = settings.persona.value.rude
 
     private fun metric() = settings.metricUnits.value
 

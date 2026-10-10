@@ -34,6 +34,8 @@ import androidx.webkit.ScriptHandler
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.aiconsole.knightriderlauncher.data.DeviceProfile
+import com.aiconsole.knightriderlauncher.data.FreezeWatchdog
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
 import com.aiconsole.knightriderlauncher.stream.InstalledScript
 import com.aiconsole.knightriderlauncher.stream.StreamUrls
@@ -59,6 +61,25 @@ class BrowserTab(val id: Long, initialUrl: String?, initialTitle: String?) {
     val isPicker: Boolean get() = url == null
     var web: WebView? = null
     var desktop: Boolean? = null
+
+    /** On screen right now (its WebView is attached in a page, not parked or hidden). */
+    var attached = false
+        internal set
+
+    /** When the tab was last shown, for discarding the least recently used hidden tabs. */
+    var lastUsed = 0L
+        internal set
+
+    /**
+     * The page's renderer crashed, ran out of memory or hung and was shut down. The tab shows a
+     * "page stopped" card instead of reloading by itself, so a page that keeps crashing can't
+     * loop; Reload clears it.
+     */
+    var gone by mutableStateOf(false)
+        internal set
+
+    /** Last reload for a desktop/mobile switch, so a redirect chain can't ping-pong reloads. */
+    internal var lastAgentReload = 0L
     internal val handlers = mutableListOf<ScriptHandler>()
 
     val host: String? get() = url?.let { runCatching { it.toUri().host }.getOrNull() }
@@ -75,7 +96,9 @@ class BrowserSession(
     private val settings: KittSettings,
     private val userscripts: UserscriptStore,
     /** Games: turn controller buttons and sticks into the keyboard keys web emulators use. */
-    private val gamepad: Boolean = false
+    private val gamepad: Boolean = false,
+    /** Lite mode (see DeviceProfile): lighter WebViews and fewer kept alive. */
+    private val lite: () -> Boolean = { false }
 ) {
     val tabs = mutableStateListOf<BrowserTab>()
     var currentIndex by mutableIntStateOf(0)
@@ -188,7 +211,24 @@ class BrowserSession(
     val siteOptionFlows: List<StateFlow<*>>
         get() = listOf(settings.siteSettings.state, settings.streamDesktop.state, settings.darkPages.state, settings.blockAds.state)
 
-    fun siteConfig(tab: BrowserTab?): SiteConfig? = tab?.host?.let { SiteSettings.decode(settings.siteSettings.value)[SiteSettings.keyFor(it)] }
+    fun siteConfig(tab: BrowserTab?): SiteConfig? = tab?.host?.let { sites()[SiteSettings.keyFor(it)] }
+
+    // Ad blocking asks for the site's options on every request the page makes (dozens a second
+    // on a busy web app): decode the stored text once per change, not per request.
+    @Volatile private var sitesCache: Pair<String, Map<String, SiteConfig>> = "" to emptyMap()
+
+    private fun sites(): Map<String, SiteConfig> {
+        val raw = settings.siteSettings.value
+        val cached = sitesCache
+        if (cached.first == raw) return cached.second
+        return SiteSettings.decode(raw).also { sitesCache = raw to it }
+    }
+
+    /** Clears a crashed tab's "page stopped" card; showing it again creates a fresh page. */
+    fun reloadGone(tab: BrowserTab) {
+        destroy(tab)
+        tab.gone = false
+    }
 
     fun isDesktop(tab: BrowserTab): Boolean =
         !SiteSettings.forcesMobile(tab.host) && (siteConfig(tab)?.desktop ?: settings.streamDesktop.value)
@@ -249,6 +289,33 @@ class BrowserSession(
         }
     }
 
+    /**
+     * The tab's page is on screen: resume it, then free the least recently used hidden pages
+     * beyond the live-WebView budget (they reload when shown again).
+     */
+    fun onShown(tab: BrowserTab, web: WebView) {
+        tab.attached = true
+        tab.lastUsed = SystemClock.elapsedRealtime()
+        web.onResume()
+        WebMedia.enforceBudget(DeviceProfile.liveWebViews(lite()))
+        FreezeWatchdog.context = "Last page shown: $space ${tab.host ?: "new tab"}."
+    }
+
+    /** The tab's page left the screen. A silent page is paused (animations, timers for rendering); a playing one keeps going. */
+    fun onHidden(tab: BrowserTab, web: WebView) {
+        tab.attached = false
+        if (tab.web !== web) return
+        WebMedia.parkIfPlaying(tab, web)
+        if (!tab.playing) web.onPause()
+    }
+
+    /** Frees a hidden tab's WebView but keeps its address, so showing it again reloads the page. */
+    internal fun discard(tab: BrowserTab) {
+        if (tab.attached || tab.playing || tab.web == null) return
+        Log.i(TAG, "Discarding hidden $space tab ${tab.id} to save memory")
+        destroy(tab)
+    }
+
     private fun destroy(tab: BrowserTab) {
         WebMedia.forget(tab)
         tab.handlers.clear()
@@ -258,6 +325,7 @@ class BrowserSession(
         }
         tab.web = null
         tab.desktop = null
+        tab.attached = false
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -275,8 +343,11 @@ class BrowserSession(
         settings.setSupportMultipleWindows(true)
         settings.javaScriptCanOpenWindowsAutomatically = false
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        // Smoother scrolling on slower head units; renderer stays a priority while visible.
-        settings.offscreenPreRaster = true
+        // Pre-rastering the page off screen scrolls smoother but costs a lot of graphics memory:
+        // only on capable units. The renderer is a priority only while the page is visible, so
+        // Android can reclaim hidden pages first.
+        // Never for the AI and Games pages: a long chat or game page is huge to raster.
+        settings.offscreenPreRaster = !lite() && space == "stream"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true)
         setBackgroundColor(android.graphics.Color.BLACK)
         isFocusable = true
@@ -288,6 +359,10 @@ class BrowserSession(
                 if (!v.hasFocus()) v.requestFocus()
             }
             false
+        }
+        // A hung page must not freeze the launcher: its renderer is terminated (see RendererWatch).
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_VIEW_RENDERER_CLIENT_BASIC_USAGE)) {
+            runCatching { WebViewCompat.setWebViewRenderProcessClient(this, RendererWatch.executor, RendererWatch.client) }
         }
         applySiteOptions(tab, this)
         webViewClient = TabClient(tab)
@@ -354,7 +429,13 @@ class BrowserSession(
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             if (url != null && url.startsWith("http")) {
                 tab.url = url
-                if (applySiteOptions(tab, view)) view.reload()
+                // A sign-in redirect between a desktop site and a mobile-only one would otherwise
+                // reload back and forth forever; at most one layout reload every few seconds.
+                val now = SystemClock.elapsedRealtime()
+                if (applySiteOptions(tab, view) && now - tab.lastAgentReload > AGENT_RELOAD_GAP_MS) {
+                    tab.lastAgentReload = now
+                    view.reload()
+                }
             }
         }
 
@@ -373,14 +454,17 @@ class BrowserSession(
         // A crashed or killed renderer must not take the launcher down: drop this tab's WebView;
         // it's recreated (and the page reloaded) the next time the tab is shown.
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            Log.w(TAG, "Renderer gone in $space tab ${tab.id}")
+            Log.w(TAG, "Renderer gone in $space tab ${tab.id} (${tab.host}), crashed=${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) detail.didCrash() else "?"}")
             if (tab.web === view) {
                 WebMedia.forget(tab)
-                (view.parent as? ViewGroup)?.removeView(view)
-                view.destroy()
                 tab.web = null
                 tab.handlers.clear()
+                tab.attached = false
+                tab.gone = true
             }
+            // Every WebView on a dead renderer must go, or the app is killed with it.
+            (view.parent as? ViewGroup)?.removeView(view)
+            view.destroy()
             return true
         }
     }
@@ -430,15 +514,29 @@ class BrowserSession(
         }
 
         override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-            // Page errors go to the app log so "Report a problem" captures them.
+            // Page errors go to the app log so "Report a problem" captures them, but rate-limited:
+            // some web apps spew hundreds a second, and each one lands on the main thread.
             if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
-                Log.w(TAG, "[$space] ${message.message()} (${message.sourceId()}:${message.lineNumber()})")
+                val now = SystemClock.elapsedRealtime()
+                if (now - consoleWindowStart > CONSOLE_WINDOW_MS) {
+                    consoleWindowStart = now
+                    consoleLogged = 0
+                }
+                if (consoleLogged++ < CONSOLE_MAX_PER_WINDOW) {
+                    Log.w(TAG, "[$space] ${message.message().take(300)} (${message.sourceId()}:${message.lineNumber()})")
+                }
             }
             return true
         }
     }
 
+    private var consoleWindowStart = 0L
+    private var consoleLogged = 0
+
     private companion object {
         const val TAG = "Browser"
+        const val AGENT_RELOAD_GAP_MS = 5_000L
+        const val CONSOLE_WINDOW_MS = 10_000L
+        const val CONSOLE_MAX_PER_WINDOW = 20
     }
 }

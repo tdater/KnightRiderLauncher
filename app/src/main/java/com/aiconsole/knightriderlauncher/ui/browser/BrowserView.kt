@@ -50,7 +50,6 @@ import com.aiconsole.knightriderlauncher.browser.BrowserSession
 import com.aiconsole.knightriderlauncher.browser.BrowserTab
 import com.aiconsole.knightriderlauncher.browser.PageScripts
 import com.aiconsole.knightriderlauncher.browser.SiteSettings
-import com.aiconsole.knightriderlauncher.browser.WebMedia
 import com.aiconsole.knightriderlauncher.browser.WebViewVersion
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
 import com.aiconsole.knightriderlauncher.stream.StreamSite
@@ -256,6 +255,10 @@ private fun Page(session: BrowserSession, tab: BrowserTab, modifier: Modifier) {
     if (tab.isPicker) return
     val hostActive = LocalWebViewHostActive.current
     Box(modifier.clip(MaterialTheme.shapes.small).border(1.dp, KittBezel, MaterialTheme.shapes.small).background(KittBlack)) {
+        if (tab.gone) {
+            PageStopped(session, tab)
+            return@Box
+        }
         if (hostActive) key(tab.id) {
             AndroidView(
                 factory = { context ->
@@ -263,11 +266,13 @@ private fun Page(session: BrowserSession, tab: BrowserTab, modifier: Modifier) {
                         // It may still sit in the background-audio parking spot (see WebMedia).
                         (it.parent as? ViewGroup)?.removeView(it)
                         it.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                        session.onShown(tab, it)
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
-                // Leaving the screen (page swiped away, other tab shown): a playing page keeps playing.
-                onRelease = { web -> WebMedia.parkIfPlaying(tab, web) }
+                // Leaving the screen (page swiped away, other tab shown): a playing page keeps
+                // playing; a silent one pauses until it's shown again.
+                onRelease = { web -> session.onHidden(tab, web) }
             )
         }
         if (tab.progress < 100) {
@@ -275,6 +280,28 @@ private fun Page(session: BrowserSession, tab: BrowserTab, modifier: Modifier) {
             Canvas(Modifier.fillMaxWidth().height(3.dp).align(Alignment.TopStart)) {
                 drawRect(ScannerRed, size = Size(size.width * tab.progress / 100f, size.height))
             }
+        }
+    }
+}
+
+/** The page's renderer died (crash, out of memory, or shut down because it hung the launcher). */
+@Composable
+private fun PageStopped(session: BrowserSession, tab: BrowserTab) {
+    Column(
+        Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("PAGE STOPPED", style = MaterialTheme.typography.titleMedium, color = ScannerRed)
+        Text(
+            "${tab.title ?: tab.host ?: "This page"} stopped responding or ran out of memory, so it was shut down " +
+                "to keep the launcher running. Long AI chats are the usual cause: start a new chat if it happens again.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = DashWhite
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KittButton("Reload", { session.reloadGone(tab) }, Modifier.height(48.dp).width(120.dp), LedGreen, active = true)
+            KittButton("Close tab", { session.closeTab(session.tabs.indexOf(tab)) }, Modifier.height(48.dp).width(120.dp), DashGrey)
         }
     }
 }

@@ -80,6 +80,13 @@ fun VoiceModulator(
     color: Color = ScannerRed,
     level: Float? = null
 ) {
+    // Idle bars stand still: no frame clock runs (and nothing redraws) until KITT is active.
+    val phase = if (active) voicePhase() else 0f
+    VoiceBars(active, phase, level, modifier, color)
+}
+
+@Composable
+private fun voicePhase(): Float {
     val transition = rememberInfiniteTransition(label = "voice")
     val phase by transition.animateFloat(
         initialValue = 0f,
@@ -87,6 +94,11 @@ fun VoiceModulator(
         animationSpec = infiniteRepeatable(tween(durationMillis = 900, easing = LinearEasing)),
         label = "voicePhase"
     )
+    return phase
+}
+
+@Composable
+private fun VoiceBars(active: Boolean, phase: Float, level: Float?, modifier: Modifier, color: Color) {
     Canvas(modifier) {
         val bars = 9
         val half = bars / 2

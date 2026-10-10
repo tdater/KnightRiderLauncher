@@ -2,7 +2,6 @@
 
 import android.util.Log
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
-import com.aiconsole.knightriderlauncher.data.settings.PersonaStyle
 import com.aiconsole.knightriderlauncher.obd.DtcDecoder
 import com.aiconsole.knightriderlauncher.obd.GaugeStore
 import com.aiconsole.knightriderlauncher.obd.ObdManager
@@ -165,9 +164,9 @@ class KittAlerts(
         _active.value = null
     }
 
-    /** The classic line, or one of the unfiltered variants at random. */
+    /** The classic line, one of the unfiltered variants at random, or that plus a Savage jab. */
     private fun line(classic: String, vararg unfiltered: String): String =
-        if (settings.persona.value == PersonaStyle.Unfiltered) unfiltered.random() else classic
+        SavageLines.pick(settings.persona.value, classic, unfiltered, kotlin.random.Random.nextInt(0, Int.MAX_VALUE))
 
     private fun checkReadings() {
         val now = System.currentTimeMillis()

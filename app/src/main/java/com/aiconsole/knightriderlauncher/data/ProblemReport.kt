@@ -42,6 +42,17 @@ object ProblemReport {
         }
     }
 
+    /** Saves a main-thread freeze (see FreezeWatchdog) next to the crashes. */
+    fun recordFreeze(context: Context, details: String) {
+        try {
+            val dir = crashDir(context.applicationContext).apply { mkdirs() }
+            File(dir, "crash-${System.currentTimeMillis()}.txt").writeText("FREEZE (launcher not responding)\n$details")
+            dir.listFiles()?.sortedByDescending { it.name }?.drop(MAX_CRASHES)?.forEach { it.delete() }
+        } catch (_: Throwable) {
+            // Best effort only.
+        }
+    }
+
     /**
      * Writes the report section by section, flushing as it goes, so a failure in one part (or the
      * slow log read) can never leave an empty file.

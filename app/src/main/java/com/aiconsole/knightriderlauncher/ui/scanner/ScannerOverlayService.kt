@@ -21,7 +21,9 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.aiconsole.knightriderlauncher.KittApplication
 import com.aiconsole.knightriderlauncher.R
+import com.aiconsole.knightriderlauncher.data.DeviceProfile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -130,6 +132,7 @@ class ScannerOverlayService : Service() {
 
 /** Plain View renderer for the overlay window (no Compose runtime needed outside an Activity). */
 private class ScannerStripView(context: Context) : View(context) {
+    private val lite: Boolean get() = (context.applicationContext as? KittApplication)?.lite?.value == true
     private val engine = ScannerEngine()
     private val lens = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(40, 255, 30, 30) }
     private val glow = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -155,7 +158,13 @@ private class ScannerStripView(context: Context) : View(context) {
             core.color = Color.argb((255 * level).toInt(), 255, (30 + 120 * level).toInt(), (30 + 90 * level).toInt())
             canvas.drawRoundRect(rect, 3f, 3f, core)
         }
-        if (visibility == VISIBLE) postInvalidateOnAnimation()
+        if (visibility == VISIBLE) nextFrame()
+    }
+
+    /** Lite mode draws at ~30 fps over other apps; otherwise at the display's rate. */
+    private fun nextFrame() {
+        val frameMs = DeviceProfile.scannerFrameNanos(lite) / 1_000_000L
+        if (frameMs > 0) postInvalidateDelayed(frameMs) else postInvalidateOnAnimation()
     }
 
     override fun onVisibilityChanged(changedView: View, visibility: Int) {

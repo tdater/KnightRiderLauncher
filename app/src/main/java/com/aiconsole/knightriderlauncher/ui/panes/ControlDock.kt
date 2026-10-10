@@ -90,6 +90,119 @@ fun ControlDock(
     }
 }
 
+/**
+ * Slim one-row dock for short landscape screens (7"–10" head units), where the stacked dock
+ * would eat a quarter of the height: last trip, now playing with media keys, and the vehicle
+ * buttons. KITT itself sits at the top of the side rail.
+ */
+@Composable
+fun DockBar(
+    onDiagnostics: () -> Unit,
+    onConfig: () -> Unit,
+    modifier: Modifier = Modifier,
+    onTrip: () -> Unit = {},
+    metric: Boolean = false
+) {
+    val context = LocalContext.current
+    val app = context.applicationContext as KittApplication
+    val shape = MaterialTheme.shapes.medium
+    val latest = rememberRecentTrips(app.tripDatabase.tripMetricDao(), days = 1)?.firstOrNull()
+    val now by app.media.nowPlaying.collectAsState()
+    val current = now
+    Row(
+        modifier
+            .clip(shape)
+            .background(KittCharcoal)
+            .border(1.dp, KittBezel, shape)
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Last trip: tap for the trip computer.
+        Row(
+            Modifier
+                .weight(1.2f)
+                .fillMaxHeight()
+                .clip(MaterialTheme.shapes.small)
+                .background(KittBlack)
+                .border(1.dp, KittGrid, MaterialTheme.shapes.small)
+                .clickable(onClick = onTrip)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SegmentDisplay(
+                latest?.let { "%.1f".format(Locale.US, if (metric) it.distanceKm else it.distanceKm * 0.621371) } ?: "--",
+                Modifier.weight(1f).fillMaxHeight(0.8f),
+                DashAmber,
+                cells = 4
+            )
+            Text(if (metric) "KM" else "MI", style = MaterialTheme.typography.labelSmall, color = DashGrey, maxLines = 1)
+            SegmentDisplay(
+                latest?.let { t -> (if (metric) t.litersPer100Km else t.mpg)?.let { "%.1f".format(Locale.US, it) } } ?: "--",
+                Modifier.weight(1f).fillMaxHeight(0.8f),
+                LedGreen,
+                cells = 4
+            )
+            Text(if (metric) "L/100" else "MPG", style = MaterialTheme.typography.labelSmall, color = DashGrey, maxLines = 1)
+        }
+        // Now playing with media keys.
+        Row(
+            Modifier
+                .weight(2f)
+                .fillMaxHeight()
+                .clip(MaterialTheme.shapes.small)
+                .background(KittBlack)
+                .border(1.dp, KittGrid, MaterialTheme.shapes.small)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f).padding(horizontal = 4.dp), verticalArrangement = Arrangement.Center) {
+                Text(
+                    current?.let { it.title ?: it.appLabel } ?: "NO MEDIA",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (current != null) DashWhite else DashGrey,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                current?.let {
+                    Text(
+                        it.artist ?: it.appLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DashGrey,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            KittButton(
+                "◀◀",
+                { if (current != null) app.media.previous() else sendMediaKey(context, KeyEvent.KEYCODE_MEDIA_PREVIOUS) },
+                Modifier.width(52.dp).fillMaxHeight(),
+                ScannerRed
+            )
+            KittButton(
+                if (current?.playing == true) "❚❚" else "▶",
+                { if (current != null) app.media.playPause() else sendMediaKey(context, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) },
+                Modifier.width(56.dp).fillMaxHeight(),
+                ScannerRed,
+                active = current?.playing == true
+            )
+            KittButton(
+                "▶▶",
+                { if (current != null) app.media.next() else sendMediaKey(context, KeyEvent.KEYCODE_MEDIA_NEXT) },
+                Modifier.width(52.dp).fillMaxHeight(),
+                ScannerRed
+            )
+        }
+        KittButton("Diag", onDiagnostics, Modifier.weight(0.6f).fillMaxHeight(), LedGreen, active = true)
+        KittButton("Trips", onTrip, Modifier.weight(0.6f).fillMaxHeight(), ScannerRed, active = true)
+        KittButton("Config", onConfig, Modifier.weight(0.6f).fillMaxHeight(), DashAmber)
+        KittButton("System", { openSettings(context, Settings.ACTION_SETTINGS) }, Modifier.weight(0.6f).fillMaxHeight(), DashAmber)
+    }
+}
+
 /** Whole section is one large touch target that opens the KITT assistant. */
 @Composable
 private fun AssistantSection(onClick: () -> Unit, speaking: Boolean, modifier: Modifier = Modifier) {

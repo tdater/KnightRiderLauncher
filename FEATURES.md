@@ -2,7 +2,15 @@
 
 A Knight Rider–themed home screen for Android car head units. It replaces the unit's stock home screen with a KITT-style dashboard. It adds an OBD-II car scanner and an AI co-pilot named KITT that can see your truck's live data, plus a browser for video, music, AI chat and games. It is built for a 12.1" portrait (9:16) Tesla-style head unit, and it also adapts to landscape screens.
 
-*Technical summary:* a native Android app in Kotlin and Jetpack Compose (single module), running on Android 7.0+ (minSdk 24, target SDK 37). It uses Room for trip history, OkHttp for networking, osmdroid for the map, and AndroidX WebKit for the browser. There are no Google Play Services or analytics dependencies. Logic such as the OBD parsing, formulas, trip maths and voice-command parsing is plain Kotlin and covered by about 142 JVM unit tests.
+**Latest additions:**
+- **Landscape layout:** on a wide screen, KITT and the page buttons move to a side rail and the dock becomes one slim row, so the pages get nearly the full height.
+- **Screen size** (KITT Config → Display): Auto, Compact, Normal or Large.
+- **Lite mode** (KITT Config → Display → Performance): Auto, Lite or Full, for slower head units.
+- **Browser that can't take the launcher down:** a page that hangs (long Claude chats were freezing the whole launcher) is shut down and shows a "page stopped" card with Reload; hidden silent pages pause; least recently used hidden tabs are freed and reload when opened; every hidden page is freed when Android runs low on memory.
+- **Freeze reports:** if the launcher ever stalls for 4 seconds, Report a problem now includes where it was stuck.
+- **Savage KITT** personality, the new default (see Personality).
+
+*Technical summary:* a native Android app in Kotlin and Jetpack Compose (single module), running on Android 7.0+ (minSdk 24, target SDK 37). It uses Room for trip history, OkHttp for networking, osmdroid for the map, and AndroidX WebKit for the browser. There are no Google Play Services or analytics dependencies. Logic such as the OBD parsing, formulas, trip maths and voice-command parsing is plain Kotlin and covered by about 156 JVM unit tests.
 
 ---
 
@@ -66,7 +74,8 @@ Swipe left and right between pages or tap the page buttons. A swipe that starts 
 - **Sources:** web-grounded answers list their sources.
 - **Subscriptions:** if you pay for Gemini, Claude or Perplexity Pro, KITT can hand your question to that official app, since consumer subscriptions can't be used through an API.
 - **Personality:**
-  - **Unfiltered KITT** (the default): savagely sarcastic and foul-mouthed, swearing in every reply and alert and roasting your driving and your vehicle, while every fact stays accurate, including turn-by-turn directions (each turn is said plainly first, then the insult);
+  - **Savage KITT** (the default): Unfiltered with the dial past maximum, swearing in every sentence, sarcasm on every fact and a parting shot on every spoken line, with the same accuracy and safety rules;
+  - **Unfiltered KITT**: savagely sarcastic and foul-mouthed, swearing in every reply and alert and roasting your driving and your vehicle, while every fact stays accurate, including turn-by-turn directions (each turn is said plainly first, then the insult);
   - **Classic KITT:** the polite TV version.
   - Both follow strict rules: don't make things up, and don't distract the driver.
 - **Voice:**

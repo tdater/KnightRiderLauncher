@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import com.aiconsole.knightriderlauncher.BuildConfig
 import com.aiconsole.knightriderlauncher.assistant.GeminiSpeechProtocol
 import com.aiconsole.knightriderlauncher.assistant.SpeechRecognizers
+import com.aiconsole.knightriderlauncher.data.LiteMode
+import com.aiconsole.knightriderlauncher.data.UiScale
 import com.aiconsole.knightriderlauncher.nav.MessageReadout
 import com.aiconsole.knightriderlauncher.ui.theme.UiTheme
 import kotlinx.coroutines.CoroutineScope
@@ -20,8 +22,13 @@ enum class AiProvider(val label: String) {
 }
 
 enum class PersonaStyle(val label: String) {
+    /** Maximum sarcasm and profanity: the default. */
+    Savage("Savage KITT"),
     Unfiltered("Unfiltered KITT"),
-    Classic("Classic KITT")
+    Classic("Classic KITT");
+
+    /** Swears and roasts (Savage and Unfiltered); Classic stays polite. */
+    val rude: Boolean get() = this != Classic
 }
 
 enum class VoiceEngine(val label: String) {
@@ -85,7 +92,7 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
         { k, v -> putString(k, v.name) }
     )
     val persona = Pref(
-        "persona", PersonaStyle.Unfiltered,
+        "persona", PersonaStyle.Savage,
         { k, d -> runCatching { PersonaStyle.valueOf(getString(k, d.name)!!) }.getOrDefault(d) },
         { k, v -> putString(k, v.name) }
     )
@@ -147,6 +154,18 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
     /** Driving layout (big controls while moving). Off by default; new key so earlier defaults don't carry over. */
     val drivingMode = boolPref("driving_layout_v2", false)
     val showMap = boolPref("show_map", true)
+    /** Lite mode: fewer animations and live web pages for slow head units (Auto decides from the hardware). */
+    val liteMode = Pref(
+        "lite_mode", LiteMode.Auto,
+        { k, d -> runCatching { LiteMode.valueOf(getString(k, d.name)!!) }.getOrDefault(d) },
+        { k, v -> putString(k, v.name) }
+    )
+    /** Launcher size on top of the screen density (Auto fits 7"–10" landscape screens). */
+    val uiScale = Pref(
+        "ui_scale", UiScale.Auto,
+        { k, d -> runCatching { UiScale.valueOf(getString(k, d.name)!!) }.getOrDefault(d) },
+        { k, v -> putString(k, v.name) }
+    )
 
     // --- Home & app drawer (newline-separated LauncherApp keys, see AppLists) ---
     val pinnedApps = stringPref("pinned_apps", "")

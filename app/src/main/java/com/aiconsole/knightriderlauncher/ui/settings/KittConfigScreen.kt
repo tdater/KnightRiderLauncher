@@ -44,6 +44,8 @@ import com.aiconsole.knightriderlauncher.assistant.AiAppHandoff
 import com.aiconsole.knightriderlauncher.assistant.GeminiAssistantClient
 import com.aiconsole.knightriderlauncher.assistant.GeminiSpeechProtocol
 import com.aiconsole.knightriderlauncher.assistant.SpeechRecognizers
+import com.aiconsole.knightriderlauncher.data.LiteMode
+import com.aiconsole.knightriderlauncher.data.UiScale
 import com.aiconsole.knightriderlauncher.data.settings.AiProvider
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
 import com.aiconsole.knightriderlauncher.data.settings.NightMode
@@ -120,6 +122,9 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val rain by settings.matrixRain.state.collectAsState()
     val nightMode by settings.nightMode.state.collectAsState()
     val showMap by settings.showMap.state.collectAsState()
+    val uiScale by settings.uiScale.state.collectAsState()
+    val liteMode by settings.liteMode.state.collectAsState()
+    val liteActive by app.lite.collectAsState()
     val navNotifications by settings.navNotifications.state.collectAsState()
     var navAccess by remember { mutableStateOf(NavBridge.hasAccess(context)) }
 
@@ -286,10 +291,10 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
             item { ChoiceRow(PersonaStyle.entries, persona, { it.label }, { settings.persona.set(it) }, color = ScannerRed) }
             item {
                 HelpText(
-                    if (persona == PersonaStyle.Unfiltered) {
-                        "Savagely sarcastic and foul-mouthed: swears in every reply and alert and roasts your driving and your vehicle, while the facts stay accurate. Turn-by-turn directions say the turn plainly first, then the insult."
-                    } else {
-                        "Calm, precise and dry, like the original."
+                    when (persona) {
+                        PersonaStyle.Savage -> "The dial past maximum: swearing in every sentence, sarcasm on every fact, and a parting shot on every spoken line. The facts and safety warnings stay exact. Turn-by-turn directions say the turn plainly first, then the insult."
+                        PersonaStyle.Unfiltered -> "Sarcastic and foul-mouthed: swears in every reply and alert and roasts your driving and your vehicle, while the facts stay accurate. Turn-by-turn directions say the turn plainly first, then the insult."
+                        PersonaStyle.Classic -> "Calm, precise and dry, like the original."
                     }
                 )
             }
@@ -405,6 +410,24 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
 
             // ---------------- Display ----------------
             item { SectionHeader("Display") }
+            item { Text("SCREEN SIZE", style = MaterialTheme.typography.labelMedium, color = DashGrey) }
+            item { ChoiceRow(UiScale.entries, uiScale, { it.label }, { settings.uiScale.set(it) }, color = ScannerRed) }
+            item {
+                HelpText(
+                    "Auto fits 7\" to 10\" landscape head units: a little smaller on short 480 dp screens (1280x720), " +
+                        "a little larger on big 10\" panels; portrait screens keep their normal size. Compact fits more on screen; Large is easier to hit while driving."
+                )
+            }
+            item { Text("PERFORMANCE", style = MaterialTheme.typography.labelMedium, color = DashGrey) }
+            item { ChoiceRow(LiteMode.entries, liteMode, { it.label }, { settings.liteMode.set(it) }, color = LedGreen) }
+            item {
+                HelpText(
+                    (if (liteActive) "Lite mode is ON. " else "Full mode is ON. ") +
+                        "Lite keeps fewer web pages loaded (hidden tabs reload when you open them), draws the scanner at 30 fps, " +
+                        "stops idle animations and the Matrix rain. Every feature still works. Auto turns Lite on for units with " +
+                        "3 GB of RAM or less or four CPU cores or fewer" + (if (app.lowEndDevice) " (like this one)." else ".")
+                )
+            }
             item { Text("THEME", style = MaterialTheme.typography.labelMedium, color = DashGrey) }
             item { ChoiceRow(UiTheme.entries, theme, { it.label }, { settings.uiTheme.set(it) }, color = ScannerRed) }
             item { Text("ACCENT COLOUR", style = MaterialTheme.typography.labelMedium, color = DashGrey) }

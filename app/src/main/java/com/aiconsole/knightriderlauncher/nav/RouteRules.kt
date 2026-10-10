@@ -293,23 +293,27 @@ object RouteRules {
         "Plenty of warning, so no fucking excuses this time.",
         "Start thinking about it now, I know it takes you a while, dumbass.",
         "Try not to sail past it like last time, hotshot.",
-        "Mirrors and blinker, genius. Those exist, damn it."
+        "Mirrors and blinker, genius. Those exist, damn it.",
+        "Get in the right lane now, not at the last shitty second like usual."
     )
     private val ROAST_NOW = listOf("Now, dumbass.", "Right fucking now.", "Now. Don't screw it up.", "Now, damn it.")
     private val ROAST_REROUTE = listOf(
         "Recalculating, because you can't follow one simple fucking instruction.",
         "Recalculating. Missed it, didn't you, ace? Shit.",
-        "Recalculating. A toddler with a crayon map would do better, damn."
+        "Recalculating. A toddler with a crayon map would do better, damn.",
+        "Recalculating. Jesus fucking Christ, it was one turn."
     )
     private val ROAST_ARRIVE = listOf(
         "and holy shit, we didn't die.",
         "and only took the long way twice, dumbass.",
-        "Park it without hitting anything, if that's not too fucking much to ask."
+        "Park it without hitting anything, if that's not too fucking much to ask.",
+        "and I deserve a goddamn medal for getting you here."
     )
     private val ROAST_START = listOf(
         "Try to follow along, it's not fucking rocket science.",
         "I'll do the thinking, you just steer, damn it.",
-        "Let's see how many turns you miss, hotshot."
+        "Let's see how many turns you miss, hotshot.",
+        "Buckle up, this'll be a shitshow, as usual."
     )
 
     enum class Speech { Start, Early, Now, Reroute, Arrive }

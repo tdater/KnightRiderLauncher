@@ -1,5 +1,6 @@
 package com.aiconsole.knightriderlauncher
 
+import android.app.ActivityManager
 import android.app.Application
 import android.appwidget.AppWidgetHost
 import android.database.SQLException
@@ -15,6 +16,8 @@ import com.aiconsole.knightriderlauncher.assistant.PerplexityAssistantClient
 import com.aiconsole.knightriderlauncher.assistant.TextToSpeechHelper
 import com.aiconsole.knightriderlauncher.assistant.WakeWordListener
 import com.aiconsole.knightriderlauncher.browser.WebMedia
+import com.aiconsole.knightriderlauncher.data.DeviceProfile
+import com.aiconsole.knightriderlauncher.data.FreezeWatchdog
 import com.aiconsole.knightriderlauncher.data.ProblemReport
 import com.aiconsole.knightriderlauncher.data.StartupRoutine
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
@@ -43,6 +46,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** Holds app-wide singletons. The OBD session and KITT's voice outlive any single screen. */
@@ -126,6 +133,24 @@ class KittApplication : Application() {
     /** Night dimming (light sensor or clock); the activity turns the sensor on while visible. */
     val nightMode: NightModeController by lazy { NightModeController(this, settings, appScope) }
 
+    /** Cheap head-unit hardware (little RAM or few cores): lite mode's Auto setting turns on. */
+    val lowEndDevice: Boolean by lazy {
+        val manager = getSystemService(ActivityManager::class.java)
+        val memory = ActivityManager.MemoryInfo().also { manager?.getMemoryInfo(it) }
+        DeviceProfile.isLowEnd(
+            totalRamMb = memory.totalMem / (1024 * 1024),
+            lowRamFlag = manager?.isLowRamDevice == true,
+            cores = Runtime.getRuntime().availableProcessors()
+        )
+    }
+
+    /** Lite mode in effect: the driver's choice, or Auto from [lowEndDevice]. */
+    val lite: StateFlow<Boolean> by lazy {
+        settings.liteMode.state
+            .map { DeviceProfile.lite(it, lowEndDevice) }
+            .stateIn(appScope, SharingStarted.Eagerly, DeviceProfile.lite(settings.liteMode.value, lowEndDevice))
+    }
+
     /** Every saved adapter, the preferred one first; connection rotates through them. */
     fun savedAdapters(): List<AdapterConfig> =
         (listOfNotNull(savedAdapter()) + AdapterProfiles.decode(settings.adapterList.value)).distinctBy { it.address }
@@ -158,6 +183,7 @@ class KittApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         ProblemReport.installCrashHandler(this)
+        FreezeWatchdog.start(this)
         // The home pager pre-composes neighbouring pages in pieces across frames. With a WebView
         // (AndroidView) on those pages that crashed the launcher on the head unit ("LayoutNode
         // should be attached to an owner"), so prefetch composes whole pages at once instead.
@@ -194,6 +220,12 @@ class KittApplication : Application() {
                 Log.w("KittApplication", "Trip log pruning failed", e)
             }
         }
+    }
+
+    /** Android is short of memory: hidden web pages go first (they reload when shown again). */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        WebMedia.trimMemory(level)
     }
 
     private companion object {

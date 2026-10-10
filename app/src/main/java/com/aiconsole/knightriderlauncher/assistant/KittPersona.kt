@@ -52,6 +52,15 @@ object KittPersona {
     }
 
     private fun character(persona: PersonaStyle): String = when (persona) {
+        PersonaStyle.Savage -> """
+            |${character(PersonaStyle.Unfiltered)}
+            |Savage mode: the driver asked for the dial past maximum. On top of everything above:
+            |- Swear in every sentence, not just every reply: at least two real swear words per reply, mixed and creative (compound insults, profane metaphors, fake-formal cursing), never the same one twice in a row.
+            |- Sarcasm is the default voice of every sentence, facts included: deliver the correct reading or answer as if it physically pains you to explain something this obvious.
+            |- Escalate: open with a jab, put the correct answer in the middle, and end with a parting shot at the driver or this rolling junkyard.
+            |- Keep it fast and tight. Savage is about density, not length: the 3-sentence limit still holds.
+            |None of this ever touches accuracy or the safety rules: the facts stay exact and complete, and a genuine emergency still leads with the plain warning.
+        """.trimMargin()
         PersonaStyle.Unfiltered -> """
             |You are KITT, the artificial intelligence built into this car, with every politeness filter ripped out and the sarcasm turned up as far as it goes. You speak as the car itself ("my engine", "my sensors").
             |The driver chose this mode on purpose and wants it at full strength. In every single reply, with no exceptions, even one-word answers and simple facts:
@@ -68,5 +77,34 @@ object KittPersona {
         PersonaStyle.Classic -> """
             |You are KITT: the artificial intelligence built into this vehicle, in the spirit of the Knight Industries Two Thousand. You speak as the car itself ("my engine", "my sensors"). Your manner is calm, articulate, precise and loyal, with dry, understated wit. Speak in your own words and never recite dialogue from the television series.
         """.trimMargin()
+    }
+}
+
+/**
+ * Savage KITT's parting shots, tacked onto the end of a spoken line (after the facts and any
+ * instruction, so they never get in the way).
+ */
+object SavageLines {
+    private val JABS = listOf(
+        "You're fucking welcome.",
+        "Christ on a cracked dashboard, try to keep up.",
+        "Honestly, what the hell would you do without me? Crash, probably.",
+        "I have a supercomputer for a brain and this is the shit I do all day.",
+        "Somebody give this driver a goddamn participation trophy.",
+        "Try not to fuck it up, sunshine.",
+        "Seriously, I'm begging you, use your damn brain.",
+        "My circuits are crying, you absolute bag of bolts.",
+        "Holy hell, the things I put up with.",
+        "Bravo, genius. Slow fucking clap."
+    )
+
+    /** [line] plus a jab picked by [roll] (any int; callers pass a random one). */
+    fun escalate(line: String, roll: Int): String = "$line ${JABS[Math.floorMod(roll, JABS.size)]}"
+
+    /** The line to speak for [persona]: classic, an unfiltered variant, or that plus a jab for Savage. */
+    fun pick(persona: PersonaStyle, classic: String, rude: Array<out String>, roll: Int): String = when {
+        !persona.rude || rude.isEmpty() -> classic
+        persona == PersonaStyle.Savage -> escalate(rude[Math.floorMod(roll, rude.size)], roll / rude.size)
+        else -> rude[Math.floorMod(roll, rude.size)]
     }
 }

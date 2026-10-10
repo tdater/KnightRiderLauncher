@@ -4,7 +4,6 @@ import android.media.AudioManager
 import android.view.KeyEvent
 import com.aiconsole.knightriderlauncher.KittApplication
 import com.aiconsole.knightriderlauncher.data.InstalledApps
-import com.aiconsole.knightriderlauncher.data.settings.PersonaStyle
 import com.aiconsole.knightriderlauncher.obd.DtcDecoder
 import com.aiconsole.knightriderlauncher.stream.StreamSites
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,10 +30,9 @@ object LauncherBus {
 /** Carries out a [VoiceCommand] and returns what KITT says about it. */
 class LauncherCommandRunner(private val app: KittApplication) {
 
-    private val unfiltered get() = app.settings.persona.value == PersonaStyle.Unfiltered
-
-    /** The classic line, or one of the unfiltered variants at random. */
-    private fun say(classic: String, vararg rude: String) = if (unfiltered) rude.random() else classic
+    /** The classic line, one of the unfiltered variants at random, or that plus a Savage jab. */
+    private fun say(classic: String, vararg rude: String) =
+        SavageLines.pick(app.settings.persona.value, classic, rude, kotlin.random.Random.nextInt(0, Int.MAX_VALUE))
 
     suspend fun run(command: VoiceCommand): String = when (command) {
         is VoiceCommand.OpenApp -> openApp(command.query)

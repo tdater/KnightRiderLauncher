@@ -59,6 +59,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashGrey
 import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
 import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
+import com.aiconsole.knightriderlauncher.ui.theme.LocalLiteMode
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 
 /** Live driving readouts overlaid on the navigation pane, KITT-dash style. */
@@ -289,13 +290,8 @@ private fun TurnBanner(nav: NavInstruction) {
 /** 80s vector-graphics perspective grid with a route line and pulsing position marker. */
 @Composable
 private fun NavigationVisualizer(modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "nav")
-    val pulse by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(durationMillis = 1800, easing = LinearEasing)),
-        label = "navPulse"
-    )
+    // Lite mode: the marker holds still instead of pulsing every frame.
+    val pulse = if (LocalLiteMode.current) 0.5f else navPulse()
     Canvas(modifier) {
         val horizon = size.height * 0.3f
         val vanishingPoint = Offset(size.width / 2, horizon)
@@ -342,4 +338,16 @@ private fun NavigationVisualizer(modifier: Modifier = Modifier) {
         }
         drawPath(arrow, ScannerRed)
     }
+}
+
+@Composable
+private fun navPulse(): Float {
+    val transition = rememberInfiniteTransition(label = "nav")
+    val pulse by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(durationMillis = 1800, easing = LinearEasing)),
+        label = "navPulse"
+    )
+    return pulse
 }
