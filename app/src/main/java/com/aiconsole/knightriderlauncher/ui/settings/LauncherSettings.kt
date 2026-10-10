@@ -45,6 +45,8 @@ import com.aiconsole.knightriderlauncher.data.ProblemReport
 import com.aiconsole.knightriderlauncher.data.ProfileRules
 import com.aiconsole.knightriderlauncher.data.ReleaseInfo
 import com.aiconsole.knightriderlauncher.data.SelfUpdate
+import com.aiconsole.knightriderlauncher.data.UpdateRules
+import com.aiconsole.knightriderlauncher.data.UpdateState
 import com.aiconsole.knightriderlauncher.data.Versions
 import com.aiconsole.knightriderlauncher.ui.components.ChoiceRow
 import com.aiconsole.knightriderlauncher.ui.components.HelpText
@@ -261,10 +263,18 @@ fun UpdateSettings(app: KittApplication) {
     val scope = rememberCoroutineScope()
     val updater = remember { SelfUpdate(context) }
     val repo by app.settings.updateRepo.state.collectAsState()
+    val state by SelfUpdate.state.collectAsState()
     var release by remember { mutableStateOf<ReleaseInfo?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
     val current = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?" }
+    val working = state is UpdateState.Downloading || state is UpdateState.Installing
+
+    fun install(r: ReleaseInfo) {
+        message = null
+        // App scope: closing KITT Config mustn't cancel a download halfway.
+        app.appScope.launch { updater.install(r) }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHeader("Updates")
@@ -272,9 +282,10 @@ fun UpdateSettings(app: KittApplication) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             KittTextField(repo, { app.settings.updateRepo.set(it.trim()) }, "GitHub repo, e.g. tdater/KITT-Launcher-releases", Modifier.weight(1f))
             KittButton(
-                if (busy) "Checking…" else "Check",
+                if (checking) "Checking…" else "Check",
                 {
-                    busy = true
+                    checking = true
+                    SelfUpdate.reset()
                     scope.launch {
                         message = try {
                             val latest = updater.latest(repo)
@@ -284,34 +295,58 @@ fun UpdateSettings(app: KittApplication) {
                             release = null
                             e.message
                         }
-                        busy = false
+                        checking = false
                     }
                 },
                 Modifier.height(48.dp).width(104.dp),
                 LedGreen,
-                enabled = !busy && Versions.isValidRepo(repo)
+                enabled = !checking && !working && Versions.isValidRepo(repo)
             )
         }
         release?.let { r ->
             KittButton(
-                "Install ${r.tag}",
-                {
-                    busy = true
-                    scope.launch {
-                        message = try {
-                            updater.install(r)
-                            "Confirm the install on screen. The launcher restarts after updating."
-                        } catch (e: IOException) {
-                            "Update failed: ${e.message}"
-                        }
-                        busy = false
-                    }
+                when (val s = state) {
+                    is UpdateState.Downloading -> "Downloading ${r.tag}… ${s.percent?.let { "$it%" }.orEmpty()}"
+                    UpdateState.Installing -> "Installing ${r.tag}…"
+                    else -> "Install ${r.tag}"
                 },
+                { install(r) },
                 Modifier.fillMaxWidth().height(48.dp),
                 ScannerRed,
                 active = true,
-                enabled = !busy
+                enabled = !working
             )
+        }
+        when (val s = state) {
+            UpdateState.NeedsPermission -> {
+                HelpText("Android needs your OK for KITT Launcher to install updates. Allow it on the next screen, come back, and tap Install again.", color = DashAmber)
+                KittButton(
+                    "Allow installs from KITT Launcher",
+                    { runCatching { context.startActivity(updater.installPermissionIntent()) } },
+                    Modifier.fillMaxWidth().height(48.dp),
+                    DashAmber,
+                    active = true
+                )
+            }
+            is UpdateState.Done -> {
+                HelpText(s.message, color = if (s.success) LedGreen else DashAmber)
+                if (!s.success && s.message == UpdateRules.DIFFERENT_KEY) {
+                    KittButton(
+                        "Open the download page",
+                        {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, "https://github.com/$repo/releases/latest".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        Modifier.fillMaxWidth().height(48.dp),
+                        DashAmber
+                    )
+                }
+            }
+            UpdateState.Installing -> HelpText("Confirm the install if Android asks. The launcher restarts after updating.")
+            else -> Unit
         }
         HelpText(
             message ?: ("Installs signed releases built by the project's GitHub workflow. Android only accepts an update " +
