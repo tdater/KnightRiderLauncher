@@ -27,6 +27,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.padding
+import androidx.activity.compose.BackHandler
 import androidx.core.content.ContextCompat
 import com.aiconsole.knightriderlauncher.KittApplication
 import com.aiconsole.knightriderlauncher.assistant.SpeechState
@@ -60,6 +68,7 @@ fun AiPane(session: BrowserSession, modifier: Modifier = Modifier) {
     val speechState by speech.state.collectAsState()
     var prompt by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
+    var bigText by remember { mutableStateOf<String?>(null) }
 
     fun sendToAll(text: String) {
         val targets = session.tabs.filter { AiSites.forHost(it.host) != null && it.web != null }
@@ -116,6 +125,12 @@ fun AiPane(session: BrowserSession, modifier: Modifier = Modifier) {
                         if (reply.isBlank()) status = "Couldn't find a reply on this page." else app.kittVoice.speak(reply)
                     }
                 }, Modifier.width(110.dp).fillMaxHeight(), DashAmber)
+                KittButton("Big text", {
+                    val tab = session.current ?: return@KittButton
+                    session.runIn(tab, AiSites.readLatest(AiSites.forHost(tab.host))) { reply ->
+                        if (reply.isBlank()) status = "Couldn't find a reply on this page." else bigText = reply
+                    }
+                }, Modifier.width(100.dp).fillMaxHeight(), LedGreen)
             }
             val line = when (val s = speechState) {
                 is SpeechState.Listening -> s.partial.ifEmpty { "LISTENING…" }
@@ -126,12 +141,20 @@ fun AiPane(session: BrowserSession, modifier: Modifier = Modifier) {
             line?.let {
                 Text(it.uppercase(), style = MaterialTheme.typography.labelMedium, color = DashGrey, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            BrowserView(
-                session = session,
-                bookmarks = app.settings.aiBookmarks,
-                picker = { AiPicker(app, it) },
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
+            val reading = bigText
+            if (reading != null) {
+                BigTextReader(reading, onRead = { app.kittVoice.speak(reading) }, onClose = {
+                    app.kittVoice.stop()
+                    bigText = null
+                }, modifier = Modifier.fillMaxWidth().weight(1f))
+            } else {
+                BrowserView(
+                    session = session,
+                    bookmarks = app.settings.aiBookmarks,
+                    picker = { AiPicker(app, it) },
+                    modifier = Modifier.fillMaxWidth().weight(1f)
+                )
+            }
         }
     }
 }
@@ -154,4 +177,26 @@ private fun AiPicker(app: KittApplication, session: BrowserSession) {
             }, Modifier.fillMaxWidth().height(56.dp), LedGreen, active = true)
         }
     )
+}
+
+/** The latest AI reply in big, glanceable text, with read-aloud. */
+@Composable
+private fun BigTextReader(text: String, onRead: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    BackHandler(onBack = onClose)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KittButton("Read aloud", onRead, Modifier.weight(1f).fillMaxHeight(), LedGreen, active = true)
+            KittButton("Back to the page", onClose, Modifier.weight(1f).fillMaxHeight(), DashGrey)
+        }
+        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+            items(text.lines().filter { it.isNotBlank() }) { paragraph ->
+                Text(
+                    paragraph,
+                    Modifier.padding(bottom = 14.dp),
+                    style = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 30.sp, lineHeight = 40.sp),
+                    color = DashWhite
+                )
+            }
+        }
+    }
 }

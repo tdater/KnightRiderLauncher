@@ -2,6 +2,8 @@
 
 import android.util.Log
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
+import com.aiconsole.knightriderlauncher.data.settings.PersonaStyle
+import com.aiconsole.knightriderlauncher.obd.DrivingEvent
 import com.aiconsole.knightriderlauncher.obd.DtcDecoder
 import com.aiconsole.knightriderlauncher.obd.GaugeStore
 import com.aiconsole.knightriderlauncher.obd.ObdManager
@@ -18,7 +20,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-data class KittAlert(val message: String, val severe: Boolean, val at: Long)
+/** Something the driver can do straight from an alert banner. */
+enum class AlertAction(val label: String) {
+    NearestFuel("Find gas"),
+    OpenTrips("See trips"),
+    HomeSettings("Fix")
+}
+
+data class KittAlert(val message: String, val severe: Boolean, val at: Long, val action: AlertAction? = null)
 
 /**
  * KITT's proactive side: greets the driver, announces the vehicle link, and speaks up about
@@ -56,18 +65,18 @@ class KittAlerts(
                     val codes = obd.dtcs.value?.all.orEmpty()
                     knownCodes = codes.toSet()
                     val status = when (codes.size) {
-                        0 -> line(
+                        0 -> bare(
                             "All systems nominal.",
                             "No fault codes. Holy shit, a miracle, considering who's driving.",
                             "Zero fault codes. Don't get cocky, you'll fuck that up soon enough.",
                             "No codes, somehow. This rust bucket is tougher than your driving deserves, damn it."
                         )
-                        1 -> line(
+                        1 -> bare(
                             "I'm reading one fault code, ${codes.first()}.",
                             "One fault code, ${codes.first()}. Congratulations, you broke something. Slow fucking clap.",
                             "One fault code, ${codes.first()}. Wow, only one? You're slacking, dumbass."
                         )
-                        else -> line(
+                        else -> bare(
                             "I'm reading ${codes.size} fault codes.",
                             "${codes.size} fault codes. What the hell have you been doing to me, demolition derby practice?",
                             "${codes.size} fault codes. Fantastic. Truly, your mechanical neglect is a fucking art form."
@@ -164,6 +173,101 @@ class KittAlerts(
         _active.value = null
     }
 
+    /** A comment on the driving (see DrivingMonitor); banner plus voice, rate-limited there. */
+    fun drivingEvent(event: DrivingEvent) {
+        val message = when (event) {
+            DrivingEvent.HardBrake -> line(
+                "That was a hard stop.",
+                "Jesus, that was a hard stop. My brake pads felt that one, dumbass.",
+                "Hard stop. Were you planning on looking ahead at some point, genius?",
+                "Whoa, damn. Brakes aren't a fucking on-off switch."
+            )
+            DrivingEvent.ColdRevs -> line(
+                "The engine is still cold. Go easy on the revs until it warms up.",
+                "My engine's still cold, so stop revving the shit out of it, you animal.",
+                "Cold engine, high revs. Give it a minute to warm up before you thrash it, damn it."
+            )
+            DrivingEvent.LongIdle -> line(
+                "We've been idling for ten minutes.",
+                "Ten minutes idling. Burning fuel to go nowhere, a true fucking visionary.",
+                "We've idled for ten damn minutes. Either drive or shut me off."
+            )
+            DrivingEvent.FullThrottle -> line(
+                "Full throttle.",
+                "Full throttle! Turbo boost, baby. Try not to kill us, hotshot.",
+                "Pedal to the damn floor. Somebody's feeling brave."
+            )
+        }
+        raise("drive_${event.name}", message, severe = false, cooldownMs = 0)
+    }
+
+    /** Fuel is low: offer the nearest gas station. Once per drive (the caller tracks that). */
+    fun lowFuel(levelPct: Double?) {
+        val level = levelPct?.let { " Fuel is at ${it.toInt()} percent." }.orEmpty()
+        raise(
+            "low_fuel",
+            line(
+                "Fuel is getting low.$level Tap Find gas for the nearest station.",
+                "Running on fumes, genius.$level Tap Find gas before we're pushing this heap.",
+                "Fuel's low, damn it.$level Find gas is right there, use it."
+            ),
+            severe = false,
+            cooldownMs = 30 * 60_000L,
+            action = AlertAction.NearestFuel
+        )
+    }
+
+    /** Over the limit by more than the driver's margin. */
+    fun speedOver(limit: Int, unit: String) {
+        raise(
+            "speed_over",
+            line(
+                "The speed limit here is $limit $unit.",
+                "Speed limit's $limit $unit, Speed Racer. Ease the hell off.",
+                "It's a $limit zone. Tickets cost money, dumbass."
+            ),
+            severe = false,
+            cooldownMs = 3 * 60_000L
+        )
+    }
+
+    /** The end-of-drive grade. */
+    fun reportCard(summary: String, grade: String) {
+        val good = grade.startsWith("A")
+        raise(
+            "report_card",
+            line(
+                summary,
+                if (good) "$summary Damn. Didn't think you had it in you." else "$summary Not great, champ. My brakes and I will be filing a complaint.",
+                if (good) "$summary Holy shit, a good drive. Write the date down." else "$summary I've seen better driving in a demolition derby."
+            ),
+            severe = false,
+            cooldownMs = 0,
+            action = AlertAction.OpenTrips
+        )
+    }
+
+    /** Another launcher became the home screen (after a crash or update). */
+    fun notHomeScreen() {
+        raise(
+            "not_home",
+            line(
+                "I'm not set as the home screen any more. Tap Fix to choose KITT again.",
+                "Some other launcher took my damn job. Tap Fix and pick me again.",
+                "I've been replaced as the home screen. Tap Fix before I get offended."
+            ),
+            severe = false,
+            cooldownMs = 12 * 3_600_000L,
+            action = AlertAction.HomeSettings
+        )
+    }
+
+    /** Like [line] but never adds Savage's jab: for pieces of a longer line that gets its own. */
+    private fun bare(classic: String, vararg unfiltered: String): String {
+        val persona = settings.persona.value.let { if (it == PersonaStyle.Savage) PersonaStyle.Unfiltered else it }
+        return if (persona == PersonaStyle.Karr) classic else SavageLines.pick(persona, classic, unfiltered, kotlin.random.Random.nextInt(0, Int.MAX_VALUE))
+    }
+
     /** The classic line, one of the unfiltered variants at random, or that plus a Savage jab. */
     private fun line(classic: String, vararg unfiltered: String): String =
         SavageLines.pick(settings.persona.value, classic, unfiltered, kotlin.random.Random.nextInt(0, Int.MAX_VALUE))
@@ -243,12 +347,12 @@ class KittAlerts(
         }
     }
 
-    private fun raise(key: String, message: String, severe: Boolean, cooldownMs: Long) {
+    private fun raise(key: String, message: String, severe: Boolean, cooldownMs: Long, action: AlertAction? = null) {
         val now = System.currentTimeMillis()
         val last = lastRaised[key]
         if (last != null && now - last < cooldownMs) return
         lastRaised[key] = now
-        _active.value = KittAlert(message, severe, now)
+        _active.value = KittAlert(message, severe, now, action)
         val spoken = spokenCount[key] ?: 0
         if (settings.voiceAlerts.value && spoken < MAX_SPOKEN) {
             spokenCount[key] = spoken + 1
@@ -256,7 +360,7 @@ class KittAlerts(
         }
         clearJob?.cancel()
         clearJob = scope.launch(Dispatchers.Main) {
-            delay(if (severe) 20_000 else 8_000)
+            delay(if (severe || action != null) 20_000 else 8_000)
             if (_active.value?.at == now) _active.value = null
         }
     }

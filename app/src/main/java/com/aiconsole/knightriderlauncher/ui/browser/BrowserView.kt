@@ -207,11 +207,13 @@ private fun Toolbar(session: BrowserSession, tab: BrowserTab, bookmarks: KittSet
             val dark = session.isDark(tab)
             val ads = session.blocksAds(tab)
             val zoom = session.textZoom(tab)
+            val saver = session.dataSaver(tab)
             LazyRow(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 // Google sign-in always loads as mobile (see SiteSettings.forcesMobile).
                 item { KittButton(if (desktop) "Desktop" else "Mobile", { session.updateSite { it.copy(desktop = !desktop) } }, Modifier.fillMaxHeight(), LedGreen, active = desktop, enabled = !SiteSettings.forcesMobile(tab.host)) }
                 item { KittButton("Dark", { session.updateSite { it.copy(dark = !dark) } }, Modifier.fillMaxHeight(), LedGreen, active = dark) }
                 item { KittButton("Block ads", { session.updateSite { it.copy(blockAds = !ads) } }, Modifier.fillMaxHeight(), LedGreen, active = ads) }
+                item { KittButton("Data saver", { session.updateSite { it.copy(dataSaver = !saver) } }, Modifier.fillMaxHeight(), LedGreen, active = saver) }
                 item { KittButton("A−", { session.updateSite { it.copy(textZoom = (zoom - 10).coerceAtLeast(60)) } }, Modifier.fillMaxHeight(), DashAmber) }
                 item { KittButton("A+ ($zoom%)", { session.updateSite { it.copy(textZoom = (zoom + 10).coerceAtMost(200)) } }, Modifier.fillMaxHeight(), DashAmber) }
                 item { KittButton("Scripts", { session.showScripts = true }, Modifier.fillMaxHeight(), DashAmber) }

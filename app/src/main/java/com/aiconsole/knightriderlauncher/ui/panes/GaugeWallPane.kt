@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -14,11 +15,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.aiconsole.knightriderlauncher.obd.PidReading
+import com.aiconsole.knightriderlauncher.ui.components.KittButton
 import com.aiconsole.knightriderlauncher.ui.components.KittPanel
 import com.aiconsole.knightriderlauncher.ui.gauges.GaugeTile
 import com.aiconsole.knightriderlauncher.ui.gauges.GaugeUi
 import com.aiconsole.knightriderlauncher.ui.theme.DashGrey
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
+import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 
 /**
  * Gauges page: the dashboard gauges at a size readable at a glance. Like the home grid, each
@@ -30,9 +33,15 @@ fun GaugeWallPane(
     metric: Boolean,
     reading: (String) -> PidReading?,
     onGaugeClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPursuit: () -> Unit = {}
 ) {
-    KittPanel(title = "Gauges", modifier = modifier, accent = LedGreen) {
+    KittPanel(
+        title = "Gauges",
+        modifier = modifier,
+        accent = LedGreen,
+        trailing = { KittButton("Pursuit", onPursuit, Modifier.height(32.dp).width(104.dp), ScannerRed, active = true) }
+    ) {
         if (gauges.isEmpty()) {
             Text(
                 "No gauges yet. Tap here to add some in Diagnostics.",

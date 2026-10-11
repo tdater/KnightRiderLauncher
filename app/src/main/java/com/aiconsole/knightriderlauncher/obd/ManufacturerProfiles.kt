@@ -49,6 +49,12 @@ object ManufacturerProfiles {
         note = note
     )
 
+    private fun tirePressure(id: String, name: String, short: String, command: String) = extended(
+        id, name, short, command, "241", "((A*256)+B)/16", Quantity.PRESSURE, 0.0, 450.0,
+        "Community-sourced (OBDb, GM body control module, verified on a 2022 Chevrolet Blazer). " +
+            "Older GM vehicles may not answer; shows no reading then."
+    )
+
     val generic = ManufacturerProfile(
         id = "generic",
         name = "Generic OBD-II",
@@ -69,7 +75,14 @@ object ManufacturerProfiles {
                     "gm_trans_temp", "Transmission fluid temperature", "Trans temp",
                     "221940", "7E2", "A-40", Quantity.TEMPERATURE, -40.0, 150.0,
                     "Community-sourced (GM Mode 22). Some models answer on the broadcast header instead of 7E2."
-                )
+                ),
+                // Tire pressures from the body control module. Source: OBDb (github.com/OBDb), verified
+                // on a 2022 Chevrolet Blazer (228-248 kPa). The engine module's 22 248E-2491 reads are
+                // NOT used: OBDb reports no GM vehicle answering them.
+                tirePressure("gm_tpms_lf", "Tire pressure, left front", "Tire LF", "225005"),
+                tirePressure("gm_tpms_rf", "Tire pressure, right front", "Tire RF", "225006"),
+                tirePressure("gm_tpms_rr", "Tire pressure, right rear", "Tire RR", "225007"),
+                tirePressure("gm_tpms_lr", "Tire pressure, left rear", "Tire LR", "225008")
             ),
             notes = "GM transmissions (6L80/8L90/10L80 and others) usually answer on header 7E2."
         ),

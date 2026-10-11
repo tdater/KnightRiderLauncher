@@ -143,6 +143,23 @@ There's no DI framework. Composables that need them do `LocalContext.current.app
 - **Problem reports:** `ProblemReport` installs a crash handler (files in `filesDir/crashes`) and writes a text report (crashes, connection log, settings without keys, own logcat) from KITT Config.
 - **Subscriptions:** consumer subscriptions (Gemini/Claude/Perplexity Pro) can't be used via API; `AiAppHandoff` sends questions to those official apps instead.
 
+**Riding along (`assistant/DriveAssistant`, all read-only):**
+- `DrivingMonitor` (pure) turns OBD readings into `DrivingEvent`s (hard brake, cold revs, long idle, full throttle), rate-limited; `KittAlerts.drivingEvent` speaks them (setting `drivingCommentary`). Full throttle also plays `SoundFx.turboBoost` (synthesized, off by default).
+- When the OBD link drops after 2+ minutes (ignition off): the GPS position becomes `ParkingSpot` (reverse-geocoded via Photon), and `ReportCards.grade` grades the drive from the trip log; both show on the Trips screen (parking spot as a QR code for the phone).
+- `FuelRules` (low fuel once per drive) → alert with `AlertAction.NearestFuel` → `RouteNavigator.navigateToNearestFuel` (Photon `osm_tag=amenity:fuel`). `KittAlert.action` puts a button on the banner.
+- `SpeedLimitService` asks Overpass for the road's `maxspeed` while the launcher shows and the vehicle moves (`SpeedLimits` parses it); HUD sign on the map, optional warning (`speedAlerts`, off by default).
+- Voice: "find gas", "where did I park", "pursuit mode" (`VoiceCommands`).
+
+**Extras:**
+- `SelfCheckPanel` (top of KITT Config) checks every permission/setting with a fix button; `HomeScreen.isDefault` also raises an alert at start-up.
+- `ReportShare`: problem report to the share sheet (FileProvider `${applicationId}.files`) or a QR code (ZXing) for a 10-minute, random-token, one-file HTTP server on the Wi-Fi/hotspot address.
+- `PursuitScreen` overlay (`LauncherOverlay.Pursuit`); `SidePanelService` ("Maps + KITT") is a touchable overlay beside a full-screen nav app, since a home activity can't share split-screen.
+- Night theme (`nightTheme`) follows `NightModeController`, which uses `SunTimes` (pure) at the GPS position when there's no light sensor.
+- `PersonaStyle.Karr`: menacing, not profane; `SavageLines.pick` adds a KARR coda. In `KittAlerts`, use `bare()` for pieces of a line that gets its own jab.
+- Browser: per-site `dataSaver` (no images, media waits for a tap); the stream window's mini player (`WebMedia.mini`, a corner FrameLayout in the activity) takes a playing video when its page leaves the screen. AI page "Big text" reader.
+- `AutoBackup` writes the backup weekly to Downloads/KITT (MediaStore on 29+); backups restore into either edition. `ReleaseNotes` (levels shared by both editions) shows "What's new" once after an update.
+- GM tire pressures: BCM header 241, `22 5005`–`5008`, sourced from OBDb (2022 Blazer).
+
 **Scanner (`ui/scanner/`):**
 - **`ScannerEngine`:** pure-Kotlin light simulation (eased head plus exponential lamp decay) shared by the Compose `KittScanner` and the overlay's plain `View`.
 - **`ScannerOverlayService`:** a non-touchable `TYPE_APPLICATION_OVERLAY` at alpha 0.8, the Android 12+ pass-through-touch limit. It hides while `LauncherVisibility.visible` is true.

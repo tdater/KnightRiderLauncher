@@ -13,8 +13,10 @@ room = "2.8.5"
 okhttp = "5.5.0"
 osmdroid = "6.1.20"
 webkit = "1.17.1"
+zxing = "3.5.4"
 
 [libraries]
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

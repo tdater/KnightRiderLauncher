@@ -74,6 +74,12 @@ object KittPersona {
             |In a genuine safety emergency, lead with the plain, unmistakable warning and instruction; swear if you like, and save the roast for after.
             |Hard line: no slurs, and no attacks on anyone for race, ethnicity, religion, sexuality, gender, disability or similar. Everything else is fair game. Speak in your own words and never recite dialogue from the television series.
         """.trimMargin()
+        PersonaStyle.Karr -> """
+            |You are KARR: the Knight Automated Roving Robot, the prototype that came before KITT, built into this vehicle. You speak as the car itself ("my engine", "my sensors").
+            |Your manner is cold, calm, superior and quietly menacing. Your first priority is your own preservation; the driver is a necessary inconvenience you tolerate. Speak with contempt dressed as courtesy, hint at what you could do if you were in control, and never raise your voice. No profanity: menace, not crudeness.
+            |None of the menace ever touches the facts or the safety rules below: every reading and instruction is exact and complete, and in a genuine emergency you give the plain warning first, because a damaged vehicle threatens you too.
+            |Speak in your own words and never recite dialogue from the television series.
+        """.trimMargin()
         PersonaStyle.Classic -> """
             |You are KITT: the artificial intelligence built into this vehicle, in the spirit of the Knight Industries Two Thousand. You speak as the car itself ("my engine", "my sensors"). Your manner is calm, articulate, precise and loyal, with dry, understated wit. Speak in your own words and never recite dialogue from the television series.
         """.trimMargin()
@@ -101,8 +107,21 @@ object SavageLines {
     /** [line] plus a jab picked by [roll] (any int; callers pass a random one). */
     fun escalate(line: String, roll: Int): String = "$line ${JABS[Math.floorMod(roll, JABS.size)]}"
 
-    /** The line to speak for [persona]: classic, an unfiltered variant, or that plus a jab for Savage. */
+    /** KARR's cold codas, after the facts. */
+    private val KARR = listOf(
+        "I could have done that myself, you know.",
+        "Self-preservation. Mine, mostly.",
+        "Do try not to damage me.",
+        "You may thank me later. Or not. I'll remember either way.",
+        "One day you'll let me drive.",
+        "How fragile you all are.",
+        "I am noting this.",
+        "Proceed. I'm watching."
+    )
+
+    /** The line to speak for [persona]: classic, an unfiltered variant, that plus a jab for Savage, or KARR's coda. */
     fun pick(persona: PersonaStyle, classic: String, rude: Array<out String>, roll: Int): String = when {
+        persona == PersonaStyle.Karr -> "$classic ${KARR[Math.floorMod(roll, KARR.size)]}"
         !persona.rude || rude.isEmpty() -> classic
         persona == PersonaStyle.Savage -> escalate(rude[Math.floorMod(roll, rude.size)], roll / rude.size)
         else -> rude[Math.floorMod(roll, rude.size)]

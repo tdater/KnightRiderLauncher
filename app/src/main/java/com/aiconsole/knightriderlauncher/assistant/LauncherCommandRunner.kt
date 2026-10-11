@@ -4,6 +4,7 @@ import android.media.AudioManager
 import android.view.KeyEvent
 import com.aiconsole.knightriderlauncher.KittApplication
 import com.aiconsole.knightriderlauncher.data.InstalledApps
+import com.aiconsole.knightriderlauncher.nav.ParkingSpot
 import com.aiconsole.knightriderlauncher.obd.DtcDecoder
 import com.aiconsole.knightriderlauncher.stream.StreamSites
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -16,6 +17,10 @@ sealed interface LauncherEvent {
     data class OpenStream(val url: String, val label: String) : LauncherEvent
     data object CloseStream : LauncherEvent
     data object OpenDiagnostics : LauncherEvent
+    data object OpenPursuit : LauncherEvent
+    data object OpenTrips : LauncherEvent
+    /** Back to the Drive page with the stream window showing (from the mini player). */
+    data object ShowStream : LauncherEvent
 }
 
 object LauncherBus {
@@ -67,6 +72,29 @@ class LauncherCommandRunner(private val app: KittApplication) {
         VoiceCommand.StopNavigation -> {
             app.navigator.stop()
             say("Navigation ended.", "Directions off. Good fucking luck finding it yourself.", "Navigation's off. Can't wait to watch you get lost, hotshot.")
+        }
+        VoiceCommand.NearestFuel -> {
+            LauncherBus.send(LauncherEvent.ShowPage("drive"))
+            val reply = app.navigator.navigateToNearestFuel()
+            if (app.navigator.active) {
+                say(reply, "$reply Maybe fill up before the light comes on next time, genius.", "$reply Running on fumes again, huh? Shocking.")
+            } else {
+                say(reply, "$reply Shit.", "$reply Hope you like walking, damn it.")
+            }
+        }
+        VoiceCommand.WhereParked -> {
+            val spot = ParkingSpot.decode(app.settings.parkingSpot.value)
+            if (spot == null) {
+                say("I haven't saved a parking spot yet. I save it when the engine switches off.", "No parking spot saved yet, genius. I save it when you switch me off.")
+            } else {
+                LauncherBus.send(LauncherEvent.OpenTrips)
+                val where = spot.address ?: "the spot on the Trips screen"
+                say("Last parked at $where. Scan the code on the Trips screen to put it on your phone.", "Last parked at $where. Scan the damn code on the Trips screen so your phone remembers, since you won't.")
+            }
+        }
+        VoiceCommand.Pursuit -> {
+            LauncherBus.send(LauncherEvent.OpenPursuit)
+            say("Pursuit mode.", "Pursuit mode. Try not to get us arrested, hotshot.", "Pursuit mode engaged. God help the other drivers.")
         }
         VoiceCommand.ReadCodes -> readCodes()
         VoiceCommand.StartLogging -> app.dataLogger.start()?.let { say("I can't start logging: $it", "I can't start logging, damn it: $it", "Logging's not happening, shit: $it") }

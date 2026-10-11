@@ -79,7 +79,8 @@ enum class KeyAction(val label: String) {
     DrivePage("Drive page"),
     ToggleStream("Stream window"),
     PlayPause("Play / pause"),
-    Diagnostics("Diagnostics")
+    Diagnostics("Diagnostics"),
+    Pursuit("Pursuit mode")
 }
 
 object KeyBindings {

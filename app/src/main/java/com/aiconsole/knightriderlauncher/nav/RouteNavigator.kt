@@ -116,6 +116,42 @@ class RouteNavigator(
         return start(speak = false) ?: "I couldn't start the route to ${place.name}."
     }
 
+    /**
+     * Routes to the nearest gas station (OpenStreetMap amenity=fuel) and starts guidance.
+     * Returns what KITT says.
+     */
+    suspend fun navigateToNearestFuel(): String {
+        val here = position() ?: return "I need a GPS position to find a gas station."
+        val place = try {
+            services.search("gas station", here, osmTag = "amenity:fuel")
+                .minByOrNull { RouteRules.distanceM(here, it.location) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: IOException) {
+            return "I can't search for gas stations without a data connection."
+        } catch (_: JSONException) {
+            return "The map search sent back something unreadable. Try again in a moment."
+        } ?: return "I couldn't find a gas station nearby."
+        routing?.cancel()
+        computeRoute(place)
+        if (_state.value.status != NavStatus.Preview) return _state.value.message ?: "I couldn't find a route to ${place.name}."
+        return start(speak = false) ?: "I couldn't start the route to ${place.name}."
+    }
+
+    /** Routes to [spot] (where the vehicle was parked) and shows the preview. */
+    fun previewTo(name: String, at: LatLon) = preview(Place(name, "", at))
+
+    /** Street address of [at], or null offline. */
+    suspend fun addressOf(at: LatLon): String? = try {
+        services.reverse(at)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: IOException) {
+        null
+    } catch (_: JSONException) {
+        null
+    }
+
     fun stop() {
         routing?.cancel()
         following?.cancel()

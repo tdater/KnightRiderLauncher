@@ -512,10 +512,12 @@ fun BackupSettings(app: KittApplication) {
             Modifier.fillMaxWidth().height(48.dp),
             ScannerRed
         )
+        ReportToPhoneButton(app)
         HelpText(
             message ?: ("Report a problem saves a text file with recent crashes, the OBD connection log, settings (no API keys) " +
-                "and this app's log. " +
-                "Save backup saves settings, gauges, custom PIDs and userscripts to a file (USB stick, Downloads…). " +
+                "and this app's log; Send report to phone gets it onto your phone with a QR code or the share sheet. " +
+                "Save backup saves settings, gauges, custom PIDs and userscripts to a file (USB stick, Downloads…); a backup " +
+                "restores into either KITT Launcher or KITT Launcher.2. " +
                 "API keys aren't included; re-enter them after restoring. Restoring restarts the launcher.")
         )
     }

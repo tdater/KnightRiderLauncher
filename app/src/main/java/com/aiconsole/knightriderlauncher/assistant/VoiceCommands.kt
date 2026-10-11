@@ -16,6 +16,9 @@ sealed interface VoiceCommand {
     data object OpenDiagnostics : VoiceCommand
     data class Navigate(val destination: String) : VoiceCommand
     data object StopNavigation : VoiceCommand
+    data object NearestFuel : VoiceCommand
+    data object WhereParked : VoiceCommand
+    data object Pursuit : VoiceCommand
 }
 
 /**
@@ -55,6 +58,11 @@ object VoiceCommands {
         Regex("""^(previous|last|go back)( song| track)$|^previous$""").find(t)?.let { return VoiceCommand.PreviousTrack }
         Regex("""^(close|hide|exit)( the)? (stream|video|window|browser)$""").find(t)?.let { return VoiceCommand.CloseStream }
         Regex("""^(stop|cancel|end|exit)( the)? (navigation|navigating|route|directions)$""").find(t)?.let { return VoiceCommand.StopNavigation }
+        Regex("""^(find|show|navigate to|take me to|get me to|where's|where is)( me)?( a| the)?( nearest| closest)? (gas station|gas|fuel|petrol station|petrol)( nearby)?$|^i need (gas|fuel|petrol)$""")
+            .find(t)?.let { return VoiceCommand.NearestFuel }
+        Regex("""^(where did i park|where('s| is) my (car|truck|vehicle|suv)|where did i leave (the|my) (car|truck|vehicle|suv))$""")
+            .find(t)?.let { return VoiceCommand.WhereParked }
+        Regex("""^((enter|start|engage|go to|open|switch to|activate) )?pursuit( mode)?$""").find(t)?.let { return VoiceCommand.Pursuit }
         Regex("""^(navigate|take me|drive|get me|give me directions|get directions|directions) to (.+)$""").find(t)?.let { m ->
             return VoiceCommand.Navigate(m.groupValues[2])
         }

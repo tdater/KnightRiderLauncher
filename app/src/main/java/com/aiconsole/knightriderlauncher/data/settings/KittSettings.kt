@@ -25,10 +25,12 @@ enum class PersonaStyle(val label: String) {
     /** Maximum sarcasm and profanity: the default. */
     Savage("Savage KITT"),
     Unfiltered("Unfiltered KITT"),
-    Classic("Classic KITT");
+    Classic("Classic KITT"),
+    /** KITT's evil twin from the series: cold, superior and menacing rather than crude. */
+    Karr("KARR");
 
-    /** Swears and roasts (Savage and Unfiltered); Classic stays polite. */
-    val rude: Boolean get() = this != Classic
+    /** Swears and roasts (Savage and Unfiltered); Classic and KARR don't. */
+    val rude: Boolean get() = this == Savage || this == Unfiltered
 }
 
 enum class VoiceEngine(val label: String) {
@@ -218,6 +220,37 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
     val gamepadKeyboard = boolPref("gamepad_keyboard", true)
     val navNotifications = boolPref("nav_notifications", true)
     val wakeWord = boolPref("wake_word", false)
+
+    // --- Driving extras ---
+    /** KITT comments on hard stops, cold revs, long idling and full throttle. */
+    val drivingCommentary = boolPref("driving_commentary", true)
+    /** KITT grades each drive when the ignition goes off. */
+    val reportCards = boolPref("report_cards", true)
+    /** Graded drives (ReportCards format). */
+    val reportCardLog = stringPref("report_card_log", "")
+    /** Speak up when fuel runs low and offer the nearest gas station. */
+    val fuelAlerts = boolPref("fuel_alerts", true)
+    /** Look up the road's speed limit (OpenStreetMap) and show it on the map. */
+    val speedLimits = boolPref("speed_limits", true)
+    /** Warn when over the limit by more than [speedAlertMargin]; off by default. */
+    val speedAlerts = boolPref("speed_alerts", false)
+    /** Margin in the driver's units (mph or km/h). */
+    val speedAlertMargin = intPref("speed_alert_margin", 7)
+    /** Where the vehicle was last switched off (ParkingSpot format). */
+    val parkingSpot = stringPref("parking_spot", "")
+    /** Original KITT-style sound effects (scanner whoosh, turbo boost). */
+    val soundEffects = boolPref("sound_effects", false)
+    /** Theme for night time ("" = keep the day theme), e.g. Stealth or Night Vision. */
+    val nightTheme = stringPref("night_theme", "")
+    /** The stream window keeps playing in a corner mini player when you leave the Drive page. */
+    val miniPlayer = boolPref("mini_player", true)
+    /** Weekly backup into Downloads/KITT. */
+    val autoBackup = boolPref("auto_backup", true)
+    val lastAutoBackup = longPref("last_auto_backup", 0L)
+    /** Release-notes level last shown (see ReleaseNotes). */
+    val notesSeen = intPref("notes_seen", 0)
+    /** Nav app for "Maps + KITT" (package name; "" = first one installed). */
+    val sidePanelNavApp = stringPref("side_panel_nav_app", "")
 
     // --- OBD ---
     val adapterType = stringPref("obd_adapter_type", "")

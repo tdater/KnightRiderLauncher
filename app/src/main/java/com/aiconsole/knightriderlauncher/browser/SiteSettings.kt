@@ -6,10 +6,12 @@ data class SiteConfig(
     val desktop: Boolean? = null,
     val dark: Boolean? = null,
     val blockAds: Boolean? = null,
-    val textZoom: Int? = null
+    val textZoom: Int? = null,
+    /** Data saver: no images, and media waits for a tap (for phone-hotspot data plans). */
+    val dataSaver: Boolean? = null
 )
 
-/** Plain-Kotlin storage for [SiteConfig]s: host|desktop|dark|ads|zoom per line ("" = default). */
+/** Plain-Kotlin storage for [SiteConfig]s: host|desktop|dark|ads|zoom|saver per line ("" = default; older 5-field lines still read). */
 object SiteSettings {
 
     /** Sites whose own players break when third-party ad hosts are blocked. */
@@ -19,14 +21,14 @@ object SiteSettings {
 
     fun decode(text: String): Map<String, SiteConfig> = text.lines().mapNotNull { line ->
         val p = line.split('|')
-        if (p.size != 5 || p[0].isBlank()) return@mapNotNull null
+        if (p.size !in 5..6 || p[0].isBlank()) return@mapNotNull null
         fun flag(s: String) = when (s) { "1" -> true; "0" -> false; else -> null }
-        SiteConfig(p[0], flag(p[1]), flag(p[2]), flag(p[3]), p[4].toIntOrNull())
+        SiteConfig(p[0], flag(p[1]), flag(p[2]), flag(p[3]), p[4].toIntOrNull(), p.getOrNull(5)?.let(::flag))
     }.associateBy { it.host }
 
     fun encode(sites: Map<String, SiteConfig>): String = sites.values.sortedBy { it.host }.joinToString("\n") { c ->
         fun flag(b: Boolean?) = when (b) { true -> "1"; false -> "0"; null -> "" }
-        "${c.host}|${flag(c.desktop)}|${flag(c.dark)}|${flag(c.blockAds)}|${c.textZoom ?: ""}"
+        "${c.host}|${flag(c.desktop)}|${flag(c.dark)}|${flag(c.blockAds)}|${c.textZoom ?: ""}|${flag(c.dataSaver)}"
     }
 
     fun update(sites: Map<String, SiteConfig>, host: String, change: (SiteConfig) -> SiteConfig): Map<String, SiteConfig> {

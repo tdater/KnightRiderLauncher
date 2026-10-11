@@ -22,8 +22,8 @@ class NavServices {
 
     private val http by lazy { assistantHttpClient() }
 
-    /** Places matching [query], nearest first when [near] is known. */
-    suspend fun search(query: String, near: LatLon?): List<Place> {
+    /** Places matching [query], nearest first when [near] is known; [osmTag] filters by kind (e.g. amenity:fuel). */
+    suspend fun search(query: String, near: LatLon?, osmTag: String? = null): List<Place> {
         val url = "https://photon.komoot.io/api/".toHttpUrl().newBuilder()
             .addQueryParameter("q", query)
             .addQueryParameter("limit", "10")
@@ -33,9 +33,23 @@ class NavServices {
                     addQueryParameter("lat", "%.5f".format(Locale.US, it.lat))
                     addQueryParameter("lon", "%.5f".format(Locale.US, it.lon))
                 }
+                osmTag?.let { addQueryParameter("osm_tag", it) }
             }
             .build()
-        val root = JSONObject(get(url))
+        return places(JSONObject(get(url)))
+    }
+
+    /** A readable address for a point ("123 Main Street, Dallas"), or null. */
+    suspend fun reverse(at: LatLon): String? {
+        val url = "https://photon.komoot.io/reverse".toHttpUrl().newBuilder()
+            .addQueryParameter("lat", "%.6f".format(Locale.US, at.lat))
+            .addQueryParameter("lon", "%.6f".format(Locale.US, at.lon))
+            .addQueryParameter("lang", "en")
+            .build()
+        return places(JSONObject(get(url))).firstOrNull()?.let { listOf(it.name, it.detail).filter { s -> s.isNotBlank() }.joinToString(", ") }
+    }
+
+    private fun places(root: JSONObject): List<Place> {
         val features = root.optJSONArray("features") ?: return emptyList()
         return (0 until features.length()).mapNotNull { i ->
             val f = features.optJSONObject(i) ?: return@mapNotNull null

@@ -176,6 +176,7 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     ) {
         LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // ---------------- AI core ----------------
+            item { SelfCheckPanel(app) }
             item { SectionHeader("AI core") }
             item { ChoiceRow(AiProvider.entries, provider, { it.label }, { settings.provider.set(it) }, color = ScannerRed) }
 
@@ -295,6 +296,7 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
                         PersonaStyle.Savage -> "The dial past maximum: swearing in every sentence, sarcasm on every fact, and a parting shot on every spoken line. The facts and safety warnings stay exact. Turn-by-turn directions say the turn plainly first, then the insult."
                         PersonaStyle.Unfiltered -> "Sarcastic and foul-mouthed: swears in every reply and alert and roasts your driving and your vehicle, while the facts stay accurate. Turn-by-turn directions say the turn plainly first, then the insult."
                         PersonaStyle.Classic -> "Calm, precise and dry, like the original."
+                        PersonaStyle.Karr -> "KITT's evil twin: cold, superior and quietly menacing, obsessed with its own preservation. No swearing. The facts and safety warnings stay exact."
                     }
                 )
             }
@@ -457,9 +459,10 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
             item {
                 HelpText(
                     "Dims the whole launcher for night driving. Auto follows the head unit's light sensor, " +
-                        "or the clock (7 PM to 7 AM) when it has none."
+                        "or sunset to sunrise at the vehicle's position (the clock, 7 PM to 7 AM, without GPS) when it has none."
                 )
             }
+            item { NightThemeSetting(app) }
             item { ChoiceRow(listOf(false, true), metric, { if (it) "Metric" else "Imperial" }, { settings.metricUnits.set(it) }) }
             item {
                 KittToggle(
@@ -553,6 +556,8 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
                 }
             }
 
+            item { DrivingExtrasSettings(app) }
+            item { ExtrasSettings(app) }
             item { HomeScreenSettings(app) }
             item { ButtonSettings(app) }
             item { DriverProfileSettings() }

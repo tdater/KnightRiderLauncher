@@ -45,6 +45,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.KittCharcoal
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreenDim
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
+import com.aiconsole.knightriderlauncher.ui.scanner.SidePanelService
 import kotlin.math.roundToInt
 
 /**
@@ -52,7 +53,7 @@ import kotlin.math.roundToInt
  * and shortcuts to Bluetooth / Wi-Fi, since head units often hide the system shade.
  */
 @Composable
-fun QuickSettingsPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
+fun QuickSettingsPanel(onClose: () -> Unit, modifier: Modifier = Modifier, onPursuit: () -> Unit = {}) {
     val context = LocalContext.current
     val app = context.applicationContext as KittApplication
     val audio = remember { context.getSystemService(AudioManager::class.java) }
@@ -113,6 +114,18 @@ fun QuickSettingsPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
                 DashAmber
             )
         }
+        var panelMessage by remember { mutableStateOf<String?>(null) }
+        Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            KittButton("Pursuit mode", onPursuit, Modifier.weight(1f).fillMaxHeight(), ScannerRed, active = true)
+            KittButton(
+                "Maps + KITT",
+                { panelMessage = SidePanelService.startWithMaps(context, app.settings.sidePanelNavApp.value) },
+                Modifier.weight(1f).fillMaxHeight(),
+                LedGreen,
+                active = true
+            )
+        }
+        panelMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = DashAmber) }
         Label("Night mode")
         ChoiceRow(NightMode.entries, night, { it.label }, { app.settings.nightMode.set(it) })
         Row(Modifier.fillMaxWidth().height(48.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

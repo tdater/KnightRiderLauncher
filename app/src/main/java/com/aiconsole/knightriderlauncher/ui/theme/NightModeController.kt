@@ -7,6 +7,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
 import com.aiconsole.knightriderlauncher.data.settings.NightMode
+import com.aiconsole.knightriderlauncher.nav.SunTimes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,10 +21,17 @@ import java.util.Calendar
 /**
  * Decides whether the dash should be dimmed for night driving. In Auto it follows the head
  * unit's ambient light sensor (with hysteresis so headlights and street lamps don't flicker
- * it), or the clock (19:00–07:00) on units without one. The sensor is only registered while
+ * it), or the sun (sunset to sunrise at the vehicle's position; the clock, 19:00–07:00,
+ * without a position) on units without one. The sensor is only registered while
  * the launcher is on screen.
  */
-class NightModeController(context: Context, settings: KittSettings, scope: CoroutineScope) : SensorEventListener {
+class NightModeController(
+    context: Context,
+    settings: KittSettings,
+    scope: CoroutineScope,
+    /** Where the vehicle is, for sunset and sunrise; the clock is the fallback. */
+    private val position: () -> Pair<Double, Double>? = { null }
+) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(SensorManager::class.java)
     private val lightSensor: Sensor? = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
@@ -67,7 +75,11 @@ class NightModeController(context: Context, settings: KittSettings, scope: Corou
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
-    private fun isNightByClock(): Boolean = NightModeRules.isNightHour(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
+    private fun isNightByClock(): Boolean {
+        val now = System.currentTimeMillis()
+        position()?.let { (lat, lon) -> SunTimes.isNight(now, lat, lon)?.let { return it } }
+        return NightModeRules.isNightHour(Calendar.getInstance().get(Calendar.HOUR_OF_DAY))
+    }
 }
 
 /** Pure thresholds, unit-tested. */

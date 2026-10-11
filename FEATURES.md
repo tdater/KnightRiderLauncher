@@ -10,7 +10,18 @@ A Knight Rider–themed home screen for Android car head units. It replaces the 
 - **Freeze reports:** if the launcher ever stalls for 4 seconds, Report a problem now includes where it was stuck.
 - **Savage KITT** personality, the new default (see Personality).
 
-*Technical summary:* a native Android app in Kotlin and Jetpack Compose (single module), running on Android 7.0+ (minSdk 24, target SDK 37). It uses Room for trip history, OkHttp for networking, osmdroid for the map, and AndroidX WebKit for the browser. There are no Google Play Services or analytics dependencies. Logic such as the OBD parsing, formulas, trip maths and voice-command parsing is plain Kotlin and covered by about 156 JVM unit tests.
+**New in this release:**
+- **System check** at the top of KITT Config: every permission and setting KITT needs, each with a fix button. KITT also warns if another launcher has taken over the home screen.
+- **Report a problem → your phone:** scan a QR code (phone on the same Wi-Fi or hotspot) or use the share sheet.
+- **KITT rides along:** comments on hard stops, revving a cold engine, long idling and full throttle; grades every drive (report cards on the Trips screen); warns when fuel is low and routes you to the nearest gas station; remembers where you switched off, with a QR code to put the spot on your phone.
+- **Speed limits** from OpenStreetMap on the map, with an optional over-the-limit warning.
+- **GM tire pressures** (community-sourced; not every GM vehicle answers).
+- **KARR**, the evil-twin personality, and optional KITT-style **sound effects** (scanner whoosh, turbo boost).
+- **Night theme** that switches at sunset, **Pursuit mode** (a full-screen 1982-style dash), and **Maps + KITT** (KITT's panel beside Google Maps or Waze).
+- **Browser:** big-text reading for AI answers, a corner **mini player** for the stream window, and per-site **data saver**.
+- **Weekly automatic backup** to Downloads/KITT that restores into either edition, and **What's new** after each update.
+
+*Technical summary:* a native Android app in Kotlin and Jetpack Compose (single module), running on Android 7.0+ (minSdk 24, target SDK 37). It uses Room for trip history, OkHttp for networking, osmdroid for the map, and AndroidX WebKit for the browser. There are no Google Play Services or analytics dependencies. Logic such as the OBD parsing, formulas, trip maths and voice-command parsing is plain Kotlin and covered by about 181 JVM unit tests.
 
 ---
 

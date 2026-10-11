@@ -119,14 +119,58 @@ object WebMedia {
         }
     }
 
-    /** The tab's page is leaving the screen; keep it attached (and audible) if it's playing. */
-    fun parkIfPlaying(tab: BrowserTab, web: WebView) {
-        val container = parking ?: return
+    /** Set by the activity: the corner mini player (see [parkIfPlaying]). Weak, like [parking]. */
+    private var miniRef: WeakReference<ViewGroup>? = null
+    var mini: ViewGroup?
+        get() = miniRef?.get()
+        set(value) {
+            miniRef = value?.let(::WeakReference)
+        }
+    private var miniTabRef: WeakReference<BrowserTab>? = null
+    private var miniTab: BrowserTab?
+        get() = miniTabRef?.get()
+        set(value) {
+            miniTabRef = value?.let(::WeakReference)
+        }
+
+    /**
+     * The tab's page is leaving the screen; keep it attached (and audible) if it's playing. With
+     * [toMini] (the stream window, mini player on) it moves to the visible corner player instead
+     * of the hidden 1×1 spot, so a video keeps showing.
+     */
+    fun parkIfPlaying(tab: BrowserTab, web: WebView, toMini: Boolean = false) {
         if (!tab.playing || tab.web !== web) return
+        val miniPlayer = mini
+        if (toMini && miniPlayer != null) {
+            (web.parent as? ViewGroup)?.removeView(web)
+            miniPlayer.addView(web, 0, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            miniPlayer.visibility = android.view.View.VISIBLE
+            miniTab = tab
+            return
+        }
+        val container = parking ?: return
         val width = web.width.coerceAtLeast(1)
         val height = web.height.coerceAtLeast(1)
         (web.parent as? ViewGroup)?.removeView(web)
         container.addView(web, FrameLayout.LayoutParams(width, height))
+    }
+
+    /** A page went back on screen: if it was in the mini player, the corner empties. */
+    fun onShown(web: WebView) {
+        val miniPlayer = mini ?: return
+        if (miniTab?.web === web || web.parent === miniPlayer) closeMini(pause = false)
+    }
+
+    /** The mini player's close button: pause the video and hide the corner. */
+    fun closeMini(pause: Boolean = true) {
+        val miniPlayer = mini ?: return
+        val tab = miniTab
+        miniTab = null
+        tab?.web?.let { web ->
+            if (pause) web.evaluateJavascript(PageScripts.PAUSE_MEDIA, null)
+            if (web.parent === miniPlayer) miniPlayer.removeView(web)
+        }
+        miniPlayer.visibility = android.view.View.GONE
     }
 
     /** The tab is closing or its WebView is going away. */
@@ -138,6 +182,10 @@ object WebMedia {
     }
 
     private fun unpark(tab: BrowserTab) {
+        if (tab === miniTab) {
+            closeMini(pause = false)
+            return
+        }
         val web = tab.web ?: return
         val container = parking ?: return
         if (web.parent === container) container.removeView(web)

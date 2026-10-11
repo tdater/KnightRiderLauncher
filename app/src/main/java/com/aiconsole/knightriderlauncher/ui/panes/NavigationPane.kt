@@ -69,7 +69,11 @@ data class HudState(
     val rpmFraction: Float = 0f,
     val rpmText: String? = null,
     val linkLabel: String = "OBD OFFLINE",
-    val linked: Boolean = false
+    val linked: Boolean = false,
+    /** The road's speed limit in the driver's units (OpenStreetMap), when known. */
+    val speedLimit: Int? = null,
+    /** Over the limit by more than the driver's margin. */
+    val overLimit: Boolean = false
 )
 
 /**
@@ -220,14 +224,35 @@ private fun LinkIndicator(hud: () -> HudState) {
 @Composable
 private fun SpeedReadout(hud: () -> HudState, modifier: Modifier = Modifier) {
     val state = hud()
-    Column(modifier, horizontalAlignment = Alignment.End) {
-        SegmentDisplay(
-            text = state.speed ?: "--",
-            modifier = Modifier.width(150.dp).height(72.dp),
-            color = DashAmber,
-            cells = 3
-        )
-        Text(state.speedUnit, style = MaterialTheme.typography.labelMedium, color = DashAmber)
+    Row(modifier, verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        state.speedLimit?.let { SpeedLimitSign(it, state.overLimit) }
+        Column(horizontalAlignment = Alignment.End) {
+            SegmentDisplay(
+                text = state.speed ?: "--",
+                modifier = Modifier.width(150.dp).height(72.dp),
+                color = if (state.overLimit) ScannerRed else DashAmber,
+                cells = 3
+            )
+            Text(state.speedUnit, style = MaterialTheme.typography.labelMedium, color = DashAmber)
+        }
+    }
+}
+
+/** The road's limit as a small sign; it turns red while the driver is over it. */
+@Composable
+private fun SpeedLimitSign(limit: Int, over: Boolean) {
+    val shape = MaterialTheme.shapes.small
+    Column(
+        Modifier
+            .width(54.dp)
+            .clip(shape)
+            .background(KittBlack.copy(alpha = 0.85f))
+            .border(2.dp, if (over) ScannerRed else DashWhite, shape)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("LIMIT", style = MaterialTheme.typography.labelSmall, color = if (over) ScannerRed else DashWhite)
+        Text(limit.toString(), style = MaterialTheme.typography.titleLarge, color = if (over) ScannerRed else DashWhite)
     }
 }
 

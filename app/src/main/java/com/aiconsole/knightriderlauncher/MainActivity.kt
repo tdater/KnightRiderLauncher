@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
@@ -68,15 +69,21 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import com.aiconsole.knightriderlauncher.assistant.AlertAction
 import com.aiconsole.knightriderlauncher.assistant.AssistantPrompt
 import com.aiconsole.knightriderlauncher.assistant.KittAlert
 import com.aiconsole.knightriderlauncher.assistant.LauncherBus
 import com.aiconsole.knightriderlauncher.assistant.LauncherEvent
 import com.aiconsole.knightriderlauncher.assistant.MicGuard
+import com.aiconsole.knightriderlauncher.assistant.SavageLines
 import com.aiconsole.knightriderlauncher.browser.BrowserSession
 import com.aiconsole.knightriderlauncher.browser.WebMedia
 import com.aiconsole.knightriderlauncher.data.AppLists
 import com.aiconsole.knightriderlauncher.data.AppUsage
+import com.aiconsole.knightriderlauncher.data.AutoBackup
+import com.aiconsole.knightriderlauncher.data.HomeScreen
+import com.aiconsole.knightriderlauncher.data.ReleaseNote
+import com.aiconsole.knightriderlauncher.data.ReleaseNotes
 import com.aiconsole.knightriderlauncher.data.DeviceProfile
 import com.aiconsole.knightriderlauncher.data.EdgeSwipe
 import com.aiconsole.knightriderlauncher.data.HardwareKeys
@@ -86,6 +93,7 @@ import com.aiconsole.knightriderlauncher.data.KeyBindings
 import com.aiconsole.knightriderlauncher.data.LauncherApp
 import com.aiconsole.knightriderlauncher.nav.NavBridge
 import com.aiconsole.knightriderlauncher.nav.NavInstruction
+import com.aiconsole.knightriderlauncher.nav.SpeedLimits
 import com.aiconsole.knightriderlauncher.obd.AdapterDiscovery
 import com.aiconsole.knightriderlauncher.obd.AdapterType
 import com.aiconsole.knightriderlauncher.obd.DrivingRules
@@ -93,10 +101,12 @@ import com.aiconsole.knightriderlauncher.obd.ObdConnectionService
 import com.aiconsole.knightriderlauncher.obd.DemoSession
 import com.aiconsole.knightriderlauncher.obd.ObdState
 import com.aiconsole.knightriderlauncher.obd.PidCatalog
+import com.aiconsole.knightriderlauncher.obd.PidDefinition
 import com.aiconsole.knightriderlauncher.obd.PidReading
 import com.aiconsole.knightriderlauncher.ui.assistant.AssistantOverlay
 import com.aiconsole.knightriderlauncher.ui.browser.LocalWebViewHostActive
 import com.aiconsole.knightriderlauncher.ui.components.KittButton
+import com.aiconsole.knightriderlauncher.ui.components.SoundFx
 import com.aiconsole.knightriderlauncher.ui.components.VoiceModulator
 import com.aiconsole.knightriderlauncher.ui.diagnostics.DiagnosticsScreen
 import com.aiconsole.knightriderlauncher.ui.gauges.GaugeUi
@@ -111,6 +121,7 @@ import com.aiconsole.knightriderlauncher.ui.panes.HudState
 import com.aiconsole.knightriderlauncher.ui.panes.MediaPane
 import com.aiconsole.knightriderlauncher.ui.panes.NavRail
 import com.aiconsole.knightriderlauncher.ui.panes.NavigationPane
+import com.aiconsole.knightriderlauncher.ui.panes.PursuitScreen
 import com.aiconsole.knightriderlauncher.ui.panes.QuickSettingsPanel
 import com.aiconsole.knightriderlauncher.ui.panes.Screensaver
 import com.aiconsole.knightriderlauncher.ui.panes.StatusGridPane
@@ -126,6 +137,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashAmber
 import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudOverlay
 import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
+import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.KnightRiderLauncherTheme
 import com.aiconsole.knightriderlauncher.ui.theme.LocalLiteMode
 import com.aiconsole.knightriderlauncher.ui.theme.MatrixRain
@@ -138,6 +150,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -152,6 +165,9 @@ class MainActivity : ComponentActivity() {
     private var homeTrigger by mutableIntStateOf(0)
 
     private val kitt: KittApplication get() = application as KittApplication
+
+    /** Release notes to show once after an update. */
+    private var whatsNew by mutableStateOf<List<ReleaseNote>>(emptyList())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -218,7 +234,12 @@ class MainActivity : ComponentActivity() {
                     nav = if (navNotifications) navInstruction else null,
                     // The Matrix rain is pure eye candy: off in lite mode.
                     rain = rain && !lite && ThemeState.theme == UiTheme.Colorado,
-                    night = night
+                    night = night,
+                    whatsNew = whatsNew,
+                    onWhatsNewSeen = {
+                        whatsNew = emptyList()
+                        settings.notesSeen.set(ReleaseNotes.latest)
+                    }
                 )
                 }
             }
@@ -228,10 +249,52 @@ class MainActivity : ComponentActivity() {
         val parking = FrameLayout(this)
         findViewById<ViewGroup>(android.R.id.content).addView(parking, 0, FrameLayout.LayoutParams(1, 1))
         WebMedia.parking = parking
+        addMiniPlayer()
+    }
+
+    /**
+     * The stream window's corner mini player: a playing video moves here when its page leaves
+     * the screen (see WebMedia). Tap it to go back to the stream window; ✕ pauses and closes.
+     */
+    private fun addMiniPlayer() {
+        val dp = resources.displayMetrics.density
+        fun px(v: Int) = (v * dp).toInt()
+        val mini = FrameLayout(this).apply {
+            visibility = android.view.View.GONE
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.BLACK)
+                setStroke(px(2), android.graphics.Color.rgb(255, 42, 26))
+            }
+            setPadding(px(2), px(2), px(2), px(2))
+            elevation = 8 * dp
+        }
+        mini.addView(
+            android.view.View(this).apply { setOnClickListener { LauncherBus.send(LauncherEvent.ShowStream) } },
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        )
+        mini.addView(
+            android.widget.TextView(this).apply {
+                text = "✕"
+                textSize = 18f
+                gravity = android.view.Gravity.CENTER
+                setTextColor(android.graphics.Color.WHITE)
+                setBackgroundColor(android.graphics.Color.argb(200, 0, 0, 0))
+                setOnClickListener { WebMedia.closeMini() }
+            },
+            FrameLayout.LayoutParams(px(44), px(44), android.view.Gravity.TOP or android.view.Gravity.END)
+        )
+        findViewById<ViewGroup>(android.R.id.content).addView(
+            mini,
+            FrameLayout.LayoutParams(px(320), px(180), android.view.Gravity.BOTTOM or android.view.Gravity.END).apply {
+                setMargins(0, 0, px(16), px(96))
+            }
+        )
+        WebMedia.mini = mini
     }
 
     override fun onDestroy() {
         if (WebMedia.parking?.context === this) WebMedia.parking = null
+        if (WebMedia.mini?.context === this) WebMedia.mini = null
         super.onDestroy()
     }
 
@@ -254,6 +317,7 @@ class MainActivity : ComponentActivity() {
         kitt.startup.onLauncherShown()
         kitt.wakeWord.setVisible(true)
         kitt.weather.start()
+        kitt.speedLimits.start()
         WebMedia.setLauncherVisible(true)
         startVehicleSystems()
     }
@@ -265,6 +329,7 @@ class MainActivity : ComponentActivity() {
         kitt.gps.stop()
         kitt.wakeWord.setVisible(false)
         kitt.weather.stop()
+        kitt.speedLimits.stop()
         WebMedia.setLauncherVisible(false)
         runCatching { kitt.widgetHost.stopListening() }
         super.onStop()
@@ -312,8 +377,46 @@ class MainActivity : ComponentActivity() {
             ScannerOverlayService.start(this)
         }
         kitt.alerts.greetOnce()
+        launchChecks()
         kitt.vehicle.reminder()?.let { kitt.alerts.remindMaintenance(it) }
     }
+
+    /** Once per process: start-up whoosh, home-screen check, weekly backup and what's new. */
+    private fun launchChecks() {
+        if (checked) return
+        checked = true
+        SoundFx.scanner()
+        if (!HomeScreen.isDefault(this)) kitt.alerts.notHomeScreen()
+        val settings = kitt.settings
+        val info = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
+        val updated = info != null && info.lastUpdateTime > info.firstInstallTime + 60_000
+        whatsNew = ReleaseNotes.since(settings.notesSeen.value, updated)
+        if (whatsNew.isEmpty()) {
+            settings.notesSeen.set(ReleaseNotes.latest)
+        } else {
+            kitt.kittVoice.speak(
+                SavageLines.pick(
+                    settings.persona.value,
+                    "I've been upgraded. Here's what's new.",
+                    arrayOf(
+                        "I've been upgraded, no thanks to you. Here's the new shit.",
+                        "New version installed. Try to keep up with what's new, dumbass."
+                    ),
+                    kotlin.random.Random.nextInt(0, Int.MAX_VALUE)
+                ),
+                interrupt = false
+            )
+        }
+        if (settings.autoBackup.value) {
+            val backup = AutoBackup(applicationContext, packageName.substringAfterLast('.'))
+            lifecycleScope.launch(Dispatchers.IO) {
+                val now = System.currentTimeMillis()
+                if (backup.runIfDue(now, settings.lastAutoBackup.value) != null) settings.lastAutoBackup.set(now)
+            }
+        }
+    }
+
+    private var checked = false
 
     private companion object {
         val VOICE_ACTIONS = setOf(Intent.ACTION_VOICE_COMMAND, Intent.ACTION_ASSIST)
@@ -321,7 +424,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-enum class LauncherOverlay { None, Assistant, Diagnostics, Config, Trips }
+enum class LauncherOverlay { None, Assistant, Diagnostics, Config, Trips, Pursuit }
 
 /** Live vehicle state for the home screen. */
 data class DashState(
@@ -334,7 +437,8 @@ data class DashState(
     val reading: (String) -> PidReading? = { null },
     val metric: Boolean = false,
     val alert: KittAlert? = null,
-    val kittSpeaking: Boolean = false
+    val kittSpeaking: Boolean = false,
+    val definition: (String) -> PidDefinition? = { null }
 )
 
 @Composable
@@ -350,6 +454,9 @@ private fun rememberDashState(app: KittApplication): DashState {
     val shiftOn = app.settings.shiftLight.state.collectAsState()
     val shiftRpm = app.settings.shiftRpm.state.collectAsState()
     val gps = app.gps.fix.collectAsState()
+    val limitKmh = app.speedLimits.limitKmh.collectAsState()
+    val limitsOn = app.settings.speedLimits.state.collectAsState()
+    val margin = app.settings.speedAlertMargin.state.collectAsState()
 
     val hudState = remember {
         derivedStateOf {
@@ -376,7 +483,12 @@ private fun rememberDashState(app: KittApplication): DashState {
                     is ObdState.Error -> "LINK ERROR"
                     ObdState.Idle -> "OBD OFFLINE"
                 },
-                linked = link is ObdState.Connected
+                linked = link is ObdState.Connected,
+                speedLimit = limitKmh.value?.takeIf { limitsOn.value }?.let { SpeedLimits.display(it, isMetric) },
+                overLimit = limitKmh.value?.takeIf { limitsOn.value }?.let { limit ->
+                    val kmh = speed ?: gpsKmh
+                    kmh != null && SpeedLimits.isOver(kmh, limit, margin.value, isMetric)
+                } ?: false
             )
         }
     }
@@ -398,7 +510,8 @@ private fun rememberDashState(app: KittApplication): DashState {
         reading = reading,
         metric = metric.value,
         alert = alert,
-        kittSpeaking = speaking
+        kittSpeaking = speaking,
+        definition = { id -> defs.value[id] }
     )
 }
 
@@ -430,7 +543,9 @@ fun LauncherRoot(
     showMap: Boolean = false,
     nav: NavInstruction? = null,
     rain: Boolean = false,
-    night: Boolean = false
+    night: Boolean = false,
+    whatsNew: List<ReleaseNote> = emptyList(),
+    onWhatsNewSeen: () -> Unit = {}
 ) {
     var overlay by rememberSaveable { mutableStateOf(LauncherOverlay.None) }
     var autoListen by remember { mutableStateOf(false) }
@@ -532,6 +647,13 @@ fun LauncherRoot(
                 }
                 LauncherEvent.CloseStream -> stream.visible = false
                 LauncherEvent.OpenDiagnostics -> overlay = LauncherOverlay.Diagnostics
+                LauncherEvent.OpenPursuit -> overlay = LauncherOverlay.Pursuit
+                LauncherEvent.OpenTrips -> overlay = LauncherOverlay.Trips
+                LauncherEvent.ShowStream -> {
+                    overlay = LauncherOverlay.None
+                    pager.animateScrollToPage(HomePage.Drive.ordinal)
+                    stream.visible = true
+                }
             }
         }
     }
@@ -552,6 +674,7 @@ fun LauncherRoot(
                 }
                 KeyAction.PlayPause -> mediaControl?.playPause()
                 KeyAction.Diagnostics -> overlay = LauncherOverlay.Diagnostics
+                KeyAction.Pursuit -> overlay = LauncherOverlay.Pursuit
             }
         }
     }
@@ -700,6 +823,7 @@ fun LauncherRoot(
                                     }
                                 }
                                 HomePage.Gauges -> GaugeWallPane(
+                                    onPursuit = { open(LauncherOverlay.Pursuit) },
                                     gauges = dash.gauges,
                                     metric = dash.metric,
                                     reading = dash.reading,
@@ -750,11 +874,28 @@ fun LauncherRoot(
                 }
 
                 dash.alert?.let { alert ->
-                    AlertBanner(alert, onDismissAlert, Modifier.align(Alignment.TopCenter).fillMaxWidth())
+                    AlertBanner(alert, onDismissAlert, Modifier.align(Alignment.TopCenter).fillMaxWidth()) { action ->
+                        onDismissAlert()
+                        when (action) {
+                            AlertAction.NearestFuel -> {
+                                scope.launch { pager.animateScrollToPage(HomePage.Drive.ordinal) }
+                                kittApp?.let { k -> scope.launch { k.kittVoice.speak(k.navigator.navigateToNearestFuel(), interrupt = true) } }
+                            }
+                            AlertAction.OpenTrips -> open(LauncherOverlay.Trips)
+                            AlertAction.HomeSettings -> HomeScreen.openSettings(context)
+                        }
+                    }
                 }
                 if (quickSettings) {
                     BackHandler { quickSettings = false }
-                    QuickSettingsPanel(onClose = { quickSettings = false }, modifier = Modifier.align(Alignment.TopCenter))
+                    QuickSettingsPanel(
+                        onClose = { quickSettings = false },
+                        onPursuit = {
+                            quickSettings = false
+                            open(LauncherOverlay.Pursuit)
+                        },
+                        modifier = Modifier.align(Alignment.TopCenter)
+                    )
                 }
 
                 val close = { overlay = LauncherOverlay.None }
@@ -776,6 +917,22 @@ fun LauncherRoot(
                         onAskKitt = askKitt,
                         modifier = Modifier.fillMaxSize()
                     )
+                    LauncherOverlay.Pursuit -> PursuitScreen(
+                        hud = dash.hud,
+                        reading = dash.reading,
+                        definition = dash.definition,
+                        metric = dash.metric,
+                        kittSpeaking = dash.kittSpeaking,
+                        onKitt = {
+                            autoListen = true
+                            open(LauncherOverlay.Assistant)
+                        },
+                        onDismiss = close,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                if (whatsNew.isNotEmpty() && overlay == LauncherOverlay.None) {
+                    WhatsNewCard(whatsNew, onWhatsNewSeen, Modifier.align(Alignment.Center))
                 }
             }
         }
@@ -865,7 +1022,7 @@ private const val NightDim = 0.45f
 
 /** KITT speaking up: voice bars plus the message, tap to dismiss. */
 @Composable
-private fun AlertBanner(alert: KittAlert, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+private fun AlertBanner(alert: KittAlert, onDismiss: () -> Unit, modifier: Modifier = Modifier, onAction: (AlertAction) -> Unit = {}) {
     val color = if (alert.severe) ScannerRed else DashAmber
     Row(
         modifier = modifier
@@ -886,6 +1043,32 @@ private fun AlertBanner(alert: KittAlert, onDismiss: () -> Unit, modifier: Modif
             maxLines = 3,
             overflow = TextOverflow.Ellipsis
         )
+        alert.action?.let { action ->
+            KittButton(action.label, { onAction(action) }, Modifier.height(48.dp).width(120.dp), LedGreen, active = true)
+        }
+    }
+}
+
+/** What's new after an update, once. */
+@Composable
+private fun WhatsNewCard(notes: List<ReleaseNote>, onDone: () -> Unit, modifier: Modifier = Modifier) {
+    BackHandler(onBack = onDone)
+    Column(
+        modifier
+            .fillMaxWidth(0.9f)
+            .clip(MaterialTheme.shapes.medium)
+            .background(KittBlack.copy(alpha = 0.96f))
+            .border(2.dp, LedGreen, MaterialTheme.shapes.medium)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text("WHAT'S NEW", style = MaterialTheme.typography.titleMedium, color = LedGreen)
+        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            notes.flatMap { it.items }.forEach { line ->
+                item { Text("• $line", style = MaterialTheme.typography.bodyLarge, color = DashWhite) }
+            }
+        }
+        KittButton("Got it", onDone, Modifier.align(Alignment.End).height(48.dp).width(120.dp), LedGreen, active = true)
     }
 }
 

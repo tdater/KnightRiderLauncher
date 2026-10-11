@@ -155,6 +155,27 @@
             </intent-filter>
         </service>
 
+        <!-- "Maps + KITT": KITT's essentials beside a full-screen navigation app. -->
+        <service
+            android:name=".ui.scanner.SidePanelService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Vehicle speed and media panel drawn beside the navigation app on an in-car head unit" />
+        </service>
+
+        <!-- Problem reports handed to the share sheet. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <service
             android:name=".ui.scanner.ScannerOverlayService"
             android:exported="false"

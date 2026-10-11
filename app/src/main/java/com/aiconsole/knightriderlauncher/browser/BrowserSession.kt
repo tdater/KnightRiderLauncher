@@ -236,15 +236,17 @@ class BrowserSession(
     fun blocksAds(tab: BrowserTab): Boolean =
         SiteSettings.blockAllowed(tab.host) && (siteConfig(tab)?.blockAds ?: settings.blockAds.value)
     fun textZoom(tab: BrowserTab): Int = siteConfig(tab)?.textZoom ?: 100
+    fun dataSaver(tab: BrowserTab): Boolean = siteConfig(tab)?.dataSaver ?: false
 
     /** Changes this site's options, remembers them, and re-applies (reloading if the layout changed). */
     fun updateSite(change: (SiteConfig) -> SiteConfig) {
         val tab = current ?: return
         val host = tab.host ?: return
         val adsBefore = blocksAds(tab)
+        val saverBefore = dataSaver(tab)
         settings.siteSettings.set(SiteSettings.encode(SiteSettings.update(SiteSettings.decode(settings.siteSettings.value), host, change)))
         // A new layout needs a reload; so do ads, which are already on the page.
-        tab.web?.let { if (applySiteOptions(tab, it) || blocksAds(tab) != adsBefore) it.reload() }
+        tab.web?.let { if (applySiteOptions(tab, it) || blocksAds(tab) != adsBefore || dataSaver(tab) != saverBefore) it.reload() }
     }
 
     /** Returns true when the user agent changed (the page must reload to use it). */
@@ -257,6 +259,9 @@ class BrowserSession(
         s.useWideViewPort = desktop
         s.loadWithOverviewMode = desktop
         s.textZoom = textZoom(tab)
+        val saver = dataSaver(tab)
+        s.blockNetworkImage = saver
+        s.mediaPlaybackRequiresUserGesture = saver
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
             WebSettingsCompat.setAlgorithmicDarkeningAllowed(s, isDark(tab))
         }
@@ -297,6 +302,7 @@ class BrowserSession(
         tab.attached = true
         tab.lastUsed = SystemClock.elapsedRealtime()
         web.onResume()
+        WebMedia.onShown(web)
         WebMedia.enforceBudget(DeviceProfile.liveWebViews(lite()))
         FreezeWatchdog.context = "Last page shown: $space ${tab.host ?: "new tab"}."
     }
@@ -305,7 +311,7 @@ class BrowserSession(
     fun onHidden(tab: BrowserTab, web: WebView) {
         tab.attached = false
         if (tab.web !== web) return
-        WebMedia.parkIfPlaying(tab, web)
+        WebMedia.parkIfPlaying(tab, web, toMini = space == "stream" && settings.miniPlayer.value)
         if (!tab.playing) web.onPause()
     }
 
