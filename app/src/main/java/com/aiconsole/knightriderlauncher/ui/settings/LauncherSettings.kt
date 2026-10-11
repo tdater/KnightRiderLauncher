@@ -180,8 +180,10 @@ fun WakeWordToggle(app: KittApplication) {
             val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             if (enable && !granted) permission.launch(Manifest.permission.RECORD_AUDIO) else app.settings.wakeWord.set(enable)
         },
-        description = "Listens while the home screen is showing. Uses the speech recognizer below; some chime " +
-            "each time they restart, and a network recognizer uses data. Say \"Hey KITT\", then your question or command."
+        description = "Listens while the home screen is showing and nothing is playing (it pauses during music, " +
+            "which drowns it out anyway; use the steering-wheel voice button or KITT then). Uses the speech recognizer " +
+            "below; some chime each time they restart, and a network recognizer uses data. Say \"Hey KITT\", then your " +
+            "question or command."
     )
 }
 

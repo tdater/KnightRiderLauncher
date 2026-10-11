@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -21,11 +22,38 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
+/** Pure rules for [WakeWordListener] (unit-tested). */
+object WakeWordRules {
+    /**
+     * Listen only when everything allows it. Never while music or any other media is playing:
+     * the recognizer can't hear "Hey KITT" over it anyway, and restarting a session every few
+     * seconds made head units chime, duck or interrupt the music over and over.
+     */
+    fun shouldListen(
+        enabled: Boolean,
+        visible: Boolean,
+        suspended: Boolean,
+        kittSpeaking: Boolean,
+        micBlocked: Boolean,
+        mediaPlaying: Boolean,
+        micPermission: Boolean
+    ): Boolean = enabled && visible && !suspended && !kittSpeaking && !micBlocked && !mediaPlaying && micPermission
+
+    /** Pause before the next session: a short gap after a quiet one, growing back-off after errors. */
+    fun restartDelayMs(error: Boolean, failures: Int): Long =
+        if (error) (500L * failures).coerceIn(500L, 15_000L) else QUIET_GAP_MS
+
+    /** How often to look again while media plays (no callback says when it stops). */
+    const val MEDIA_RECHECK_MS = 5_000L
+    private const val QUIET_GAP_MS = 1_000L
+}
+
 /**
  * "Hey KITT": keeps a speech recognizer listening in short sessions while the launcher is in
  * front and idle, and fires [wakes] when it hears the phrase. Android has no public hotword API
  * for third-party apps, so this uses the regular recognizer: an on-device one (Android 12+) keeps
- * it offline; some recognizers chime each time a session starts. Main thread only.
+ * it offline; some recognizers chime each time a session starts. It stands down while any app is
+ * playing media (see [WakeWordRules.shouldListen]). Main thread only.
  */
 class WakeWordListener(
     context: Context,
@@ -36,6 +64,7 @@ class WakeWordListener(
 
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
+    private val audio = appContext.getSystemService(AudioManager::class.java)
     private var recognizer: SpeechRecognizer? = null
     private var visible = false
     private var suspended = false
@@ -76,9 +105,17 @@ class WakeWordListener(
         update()
     }
 
-    private fun shouldListen(): Boolean =
-        enabled && visible && !suspended && !speaking && !MicGuard.autoListenBlocked() &&
-            ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    private fun mediaPlaying(): Boolean = audio?.isMusicActive == true
+
+    private fun shouldListen(): Boolean = WakeWordRules.shouldListen(
+        enabled = enabled,
+        visible = visible,
+        suspended = suspended,
+        kittSpeaking = speaking,
+        micBlocked = MicGuard.autoListenBlocked(),
+        mediaPlaying = mediaPlaying(),
+        micPermission = ContextCompat.checkSelfPermission(appContext, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    )
 
     private fun update() {
         main.removeCallbacksAndMessages(null)
@@ -86,6 +123,14 @@ class WakeWordListener(
             if (!listening) startSession()
         } else {
             stopAll()
+            waitForMediaToStop()
+        }
+    }
+
+    /** Media is the only blocker nothing tells us about: look again every few seconds until it stops. */
+    private fun waitForMediaToStop() {
+        if (enabled && visible && !suspended && mediaPlaying()) {
+            main.postDelayed({ update() }, WakeWordRules.MEDIA_RECHECK_MS)
         }
     }
 
@@ -126,8 +171,7 @@ class WakeWordListener(
         listening = false
         failures = if (error) failures + 1 else 0
         // Back off on repeated errors (e.g. no network recognizer) so the mic isn't hammered.
-        val delayMs = if (error) (500L * failures).coerceAtMost(15_000L) else 150L
-        main.postDelayed({ if (shouldListen()) startSession() }, delayMs)
+        main.postDelayed({ update() }, WakeWordRules.restartDelayMs(error, failures))
     }
 
     private fun check(bundle: Bundle?): Boolean {
