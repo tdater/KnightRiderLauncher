@@ -18,7 +18,7 @@ object PerplexityRouting {
         RegexOption.IGNORE_CASE
     )
 
-    /** Questions about the truck's own live data, which arrives in the vehicle context. */
+    /** Questions about the vehicle's own live data, which arrives in the vehicle context. */
     private val VEHICLE_DATA = Regex(
         "\\b(my|the|current)\\s+(speed|rpm|revs|coolant|temp|temperature|battery|voltage|fuel( level)?|boost|load|throttle|" +
             "trans(mission)? temp|oil|codes?|trip|drive|mileage|mpg|economy|range|odometer|maintenance|tires?)\\b|" +

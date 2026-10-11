@@ -266,7 +266,7 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
                         webSearch,
                         { settings.webSearch.set(it) },
                         description = "Questions about current facts (weather, prices, recalls) and diagnostics search the web. " +
-                            "Truck readings, trips and small talk skip the search charge. Off: never search."
+                            "Vehicle readings, trips and small talk skip the search charge. Off: never search."
                     )
                 }
                 item { Text("NO-SEARCH MODEL", style = MaterialTheme.typography.labelMedium, color = DashGrey) }

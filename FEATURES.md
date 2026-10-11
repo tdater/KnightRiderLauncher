@@ -1,6 +1,6 @@
 # KITT Launcher: Features and Options
 
-A Knight Rider–themed home screen for Android car head units. It replaces the unit's stock home screen with a KITT-style dashboard. It adds an OBD-II car scanner and an AI co-pilot named KITT that can see your truck's live data, plus a browser for video, music, AI chat and games. It is built for a 12.1" portrait (9:16) Tesla-style head unit, and it also adapts to landscape screens.
+A Knight Rider–themed home screen for Android car head units. It replaces the unit's stock home screen with a KITT-style dashboard. It adds an OBD-II car scanner and an AI co-pilot named KITT that can see your vehicle's live data, plus a browser for video, music, AI chat and games. It is built for a 12.1" portrait (9:16) Tesla-style head unit, and it also adapts to landscape screens.
 
 **Latest additions:**
 - **Landscape layout:** on a wide screen, KITT and the page buttons move to a side rail and the dock becomes one slim row, so the pages get nearly the full height.
@@ -61,7 +61,7 @@ Swipe left and right between pages or tap the page buttons. A swipe that starts 
 ## KITT, the AI co-pilot
 
 - **Talk or type.** Use the mic button, your steering-wheel voice button, or say **"Hey KITT"** if you turn that on.
-- **KITT knows your truck.** Each question includes the live readings, fault codes, the vehicle identity and a 30-day summary of your driving history, so you can ask "how's my coolant?" or "how was that drive?"
+- **KITT knows your vehicle.** Each question includes the live readings, fault codes, the vehicle identity and a 30-day summary of your driving history, so you can ask "how's my coolant?" or "how was that drive?"
 - **Two AI services** (you supply your own API key; keys are encrypted on the device with the Android Keystore, AES-GCM):
   - **Google Gemini:**
     - a fast model for conversation and a smarter model for diagnostic questions, each selectable;
@@ -70,7 +70,7 @@ Swipe left and right between pages or tap the page buttons. A swipe that starts 
   - **Perplexity Agent API:**
     - presets from **fast** to **high**, chosen separately for conversation and diagnostics;
     - every answer shows its cost;
-    - **credit saving:** questions about your truck or plain chit-chat skip the paid web search and go to a single model; current-events questions (weather, prices, recalls, scores) and diagnostics search the web.
+    - **credit saving:** questions about your vehicle or plain chit-chat skip the paid web search and go to a single model; current-events questions (weather, prices, recalls, scores) and diagnostics search the web.
 - **Sources:** web-grounded answers list their sources.
 - **Subscriptions:** if you pay for Gemini, Claude or Perplexity Pro, KITT can hand your question to that official app, since consumer subscriptions can't be used through an API.
 - **Personality:**
@@ -146,7 +146,7 @@ Plug in an ELM327-compatible OBD-II adapter (a Bluetooth or Wi-Fi diagnostic don
   - **Link:** find, pair and connect adapters, and choose the manufacturer profile and protocol.
 - **Trips:**
   - every drive is logged once per second;
-  - the Trips screen shows your last drive and the rest of the week: distance, time, speed and fuel used/economy where the truck reports it.
+  - the Trips screen shows your last drive and the rest of the week: distance, time, speed and fuel used/economy where the vehicle reports it.
 - **Vehicle safety by design:** the app never clears codes, changes ECU settings or sends write commands unless you press the button for that specific action.
 - *Under the hood:*
   - **ELM327 driver:** commands are serialised, so background polling and on-demand requests never collide.
@@ -186,7 +186,7 @@ One shared, tabbed browser powers three places: the **Stream window** on the Dri
   - play/pause;
   - diagnostics.
 - **Start-up routine:** on start, or on wake after 5+ minutes of sleep, open a chosen app and/or resume your audio.
-- **Driver profiles:** save and switch personal settings per driver, while truck data (adapters, odometer, service, fuel) stays shared.
+- **Driver profiles:** save and switch personal settings per driver, while vehicle data (adapters, odometer, service, fuel) stays shared.
 - **Backup and restore:** all settings in one file. API keys are deliberately left out.
 - **Updates:** the app can check a GitHub repository for new releases and install them.
 - **Report a problem:** writes one text report with recent crashes, the OBD connection log, your settings (keys removed) and the app's own log.

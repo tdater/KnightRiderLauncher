@@ -7,7 +7,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 
-/** Which settings belong to a driver and which to the truck. Plain Kotlin. */
+/** Which settings belong to a driver and which to the vehicle. Plain Kotlin. */
 object ProfileRules {
 
     /** Vehicle-level keys every driver shares: adapters, identity, odometer, service, fuel, widgets. */

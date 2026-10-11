@@ -147,7 +147,7 @@ private fun BatteryCard(app: KittApplication) {
         Line("Last start", "${v(r.crankingMinVolts)}  ${r.crankingState.orEmpty()}")
         Line("Engine running", "${v(r.chargingVolts)}  ${r.chargingState.orEmpty()}")
         HelpText(
-            "From the engine computer's supply voltage (or the adapter's reading if the truck doesn't report it) over the last 5 minutes. For the engine-off and start readings, " +
+            "From the engine computer's supply voltage (or the adapter's reading if the vehicle doesn't report it) over the last 5 minutes. For the engine-off and start readings, " +
                 "connect before starting the engine. Readings at the OBD port run a little below the battery terminals."
         )
     }

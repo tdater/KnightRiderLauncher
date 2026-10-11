@@ -21,7 +21,7 @@ object Maintenance {
 
     private const val MI = 1.609344
 
-    /** Common intervals for a gasoline truck; the driver edits them. */
+    /** Common intervals for a gasoline vehicle; the driver edits them. */
     fun defaults(odometerKm: Double): List<MaintenanceItem> = listOf(
         MaintenanceItem("Oil change", 5_000 * MI, odometerKm),
         MaintenanceItem("Tire rotation", 6_000 * MI, odometerKm),

@@ -245,7 +245,7 @@ fun DriverProfileSettings() {
         }
         HelpText(
             message ?: ("Each profile keeps its own theme, KITT persona and voice, gauges, favourites and saved sites. " +
-                "The truck's adapter, VIN, odometer, maintenance and fuel log are shared. Switching restarts the launcher.")
+                "The vehicle's adapter, VIN, odometer, maintenance and fuel log are shared. Switching restarts the launcher.")
         )
     }
 }
