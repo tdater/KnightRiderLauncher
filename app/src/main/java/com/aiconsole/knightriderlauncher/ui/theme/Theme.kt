@@ -88,6 +88,7 @@ fun KnightRiderLauncherTheme(content: @Composable () -> Unit) {
         colorScheme = scheme,
         typography = when {
             theme == UiTheme.Colorado -> ColoradoTypography
+            theme == UiTheme.BackToTheFuture -> Typography
             theme.hud != null -> HudTypography
             else -> Typography
         },

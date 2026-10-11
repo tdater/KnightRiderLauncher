@@ -160,6 +160,12 @@ There's no DI framework. Composables that need them do `LocalContext.current.app
 - `AutoBackup` writes the backup weekly to Downloads/KITT (MediaStore on 29+); backups restore into either edition. `ReleaseNotes` (levels shared by both editions) shows "What's new" once after an update.
 - GM tire pressures: BCM header 241, `22 5005`–`5008`, sourced from OBDb (2022 Blazer).
 
+**Film themes (`HudStyle`: Terminator, RoboCop, Matrix, Future = Back to the Future):**
+- `FilmHud.kt`: status/intro/alert text (`FilmHudText`), the full-screen overlay (Terminator's scrolling machine code, RoboCop's visor sweep; still in lite mode) and `hudFrame` (brackets, ticks, BTTF rivets).
+- `FilmExtras.kt`: `ThemeIntro` boot sequence when a film theme comes on (`filmIntros`), `TimeCircuitsStrip` (BTTF replaces the status-strip clock; `TimeCircuits` is pure), `FilmMapReticle`, `FilmAlertHeader`, `assistantName()`.
+- `KittScanner` (flux pulses for BTTF), `VoiceModulator` (flux capacitor / oscilloscope), `KittPanel` titles (label tape for BTTF).
+- `FilmCharacter` (`assistant/FilmCharacters.kt`): per-theme personality layer added to `KittPersona.systemInstruction`, Gemini voice + style, device-TTS pitch/rate, greeting; setting `filmCharacters`. Original characters only: never imitate a real actor's voice or recite film dialogue.
+
 **Scanner (`ui/scanner/`):**
 - **`ScannerEngine`:** pure-Kotlin light simulation (eased head plus exponential lamp decay) shared by the Compose `KittScanner` and the overlay's plain `View`.
 - **`ScannerOverlayService`:** a non-touchable `TYPE_APPLICATION_OVERLAY` at alpha 0.8, the Android 12+ pass-through-touch limit. It hides while `LauncherVisibility.visible` is true.

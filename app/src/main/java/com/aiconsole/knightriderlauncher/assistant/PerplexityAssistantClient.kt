@@ -38,7 +38,8 @@ class PerplexityAssistantClient(
         vehicleContext: String,
         persona: PersonaStyle,
         webGrounded: Boolean = true,
-        localModel: String = ""
+        localModel: String = "",
+        character: FilmCharacter? = null
     ): AssistantResult = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext AssistantResult.Failure("No Perplexity API key yet. Add one under KITT CONFIG, AI CORE.")
@@ -48,7 +49,7 @@ class PerplexityAssistantClient(
         // History goes into the instructions: the Agent API input is kept to the single current message.
         val recent = history.takeLast(6).joinToString("\n") { (if (it.fromUser) "Driver: " else "KITT: ") + it.text }
         val modelOnly = !webGrounded && localModel.isNotBlank()
-        fun instructions(web: Boolean) = KittPersona.systemInstruction(persona, driverName, webSearch = web, vehicleContext) +
+        fun instructions(web: Boolean) = KittPersona.systemInstruction(persona, driverName, webSearch = web, vehicleContext, character) +
             if (recent.isNotEmpty()) "\n\nRECENT CONVERSATION:\n$recent" else ""
 
         try {

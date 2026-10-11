@@ -57,6 +57,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 import com.aiconsole.knightriderlauncher.ui.theme.UiTheme
+import com.aiconsole.knightriderlauncher.ui.theme.hud
 import java.io.IOException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -312,5 +313,24 @@ fun ReportToPhoneButton(app: KittApplication) {
                 }
             }
         }
+    }
+}
+
+/** Film themes: the character's voice and personality, and the boot sequence. */
+@Composable
+fun FilmThemeSettings(app: KittApplication) {
+    val characters by app.settings.filmCharacters.state.collectAsState()
+    val intros by app.settings.filmIntros.state.collectAsState()
+    val character = com.aiconsole.knightriderlauncher.assistant.FilmCharacter.forStyle(com.aiconsole.knightriderlauncher.ui.theme.ThemeState.theme.hud)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        KittToggle(
+            "Film character",
+            characters,
+            { app.settings.filmCharacters.set(it) },
+            description = (character?.let { "KITT becomes the ${it.label}: its own voice and way of talking. " } ?: "") +
+                "An original character in the spirit of the film, not an imitation of the actor. Your personality setting " +
+                "still decides how crude it is; the voice needs the Gemini voice engine (the device voice only changes pitch and pace)."
+        )
+        KittToggle("Film intro", intros, { app.settings.filmIntros.set(it) }, description = "The theme's boot sequence when it comes on. Tap it to skip.")
     }
 }

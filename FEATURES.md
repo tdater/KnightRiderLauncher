@@ -21,7 +21,12 @@ A Knight Rider–themed home screen for Android car head units. It replaces the 
 - **Browser:** big-text reading for AI answers, a corner **mini player** for the stream window, and per-site **data saver**.
 - **Weekly automatic backup** to Downloads/KITT that restores into either edition, and **What's new** after each update.
 
-*Technical summary:* a native Android app in Kotlin and Jetpack Compose (single module), running on Android 7.0+ (minSdk 24, target SDK 37). It uses Room for trip history, OkHttp for networking, osmdroid for the map, and AndroidX WebKit for the browser. There are no Google Play Services or analytics dependencies. Logic such as the OBD parsing, formulas, trip maths and voice-command parsing is plain Kotlin and covered by about 181 JVM unit tests.
+**Film themes, upgraded:**
+- **Back to the Future** theme (the 11th): DeLorean steel, time circuits in place of the clock (destination = route arrival, present, last departed = when this drive started), flux-capacitor scanner and voice box, label-maker panel titles.
+- **Terminator / RoboCop / The Matrix:** start-up sequences, Terminator's scrolling machine code and targeting box on the map, RoboCop's visor sweep and reticle, film-styled alert banners (The Matrix types them out).
+- **Film characters:** each film theme gives KITT its character's voice and way of talking (original characters in the spirit of the films, not actor imitations); turn off under KITT Config → Display.
+
+*Technical summary:* a native Android app in Kotlin and Jetpack Compose (single module), running on Android 7.0+ (minSdk 24, target SDK 37). It uses Room for trip history, OkHttp for networking, osmdroid for the map, and AndroidX WebKit for the browser. There are no Google Play Services or analytics dependencies. Logic such as the OBD parsing, formulas, trip maths and voice-command parsing is plain Kotlin and covered by about 185 JVM unit tests.
 
 ---
 

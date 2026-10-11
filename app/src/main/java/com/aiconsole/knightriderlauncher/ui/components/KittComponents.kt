@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -99,6 +100,17 @@ private fun voicePhase(): Float {
 
 @Composable
 private fun VoiceBars(active: Boolean, phase: Float, level: Float?, modifier: Modifier, color: Color) {
+    when (ThemeState.theme.hud) {
+        HudStyle.Future -> {
+            FluxCapacitor(active, phase, level, modifier, color)
+            return
+        }
+        HudStyle.Terminator -> {
+            Oscilloscope(active, phase, level, modifier, color)
+            return
+        }
+        else -> Unit
+    }
     Canvas(modifier) {
         val bars = 9
         val half = bars / 2
@@ -165,7 +177,19 @@ fun KittPanel(
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            Text(
+            if (hud == HudStyle.Future) {
+                // Back to the Future: Doc's label-maker tape, white embossed letters on black.
+                Text(
+                    title.uppercase(),
+                    Modifier
+                        .background(Color(0xFF0B0B0B), RoundedCornerShape(2.dp))
+                        .border(1.dp, Color(0xFF3A3F45), RoundedCornerShape(2.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                    color = Color(0xFFF2F2F2),
+                    maxLines = 1
+                )
+            } else Text(
                 // The Matrix reads like a terminal ("> NAVIGATION_"); the other film HUDs like targeting
                 // readouts: "▌NAVIGATION" with a machine tag, or "[ NAVIGATION ]" in the visor style.
                 text = when {
@@ -304,6 +328,64 @@ fun LedBarGauge(
                 topLeft = Offset(i * (segmentWidth + gap), 0f),
                 size = Size(segmentWidth, size.height)
             )
+        }
+    }
+}
+
+/**
+ * Back to the Future's voice box: the flux capacitor, a Y of three light tubes whose lamps run
+ * in towards the core while it talks.
+ */
+@Composable
+private fun FluxCapacitor(active: Boolean, phase: Float, level: Float?, modifier: Modifier, color: Color) {
+    Canvas(modifier) {
+        val core = Offset(size.width / 2, size.height * 0.62f)
+        val reach = minOf(size.width, size.height) * 0.52f
+        val ends = listOf(
+            Offset(core.x - reach * 0.87f, core.y - reach * 0.5f),
+            Offset(core.x + reach * 0.87f, core.y - reach * 0.5f),
+            Offset(core.x, core.y + reach * 0.42f)
+        )
+        val lamps = 5
+        val run = (phase / (2 * PI).toFloat()) // 0..1
+        val strength = when {
+            !active -> 0.15f
+            level != null -> 0.3f + 0.7f * level
+            else -> 1f
+        }
+        ends.forEach { end ->
+            drawLine(color.copy(alpha = 0.25f), end, core, size.minDimension * 0.06f)
+            for (i in 0 until lamps) {
+                val t = (i + 0.5f) / lamps
+                val pos = Offset(end.x + (core.x - end.x) * t, end.y + (core.y - end.y) * t)
+                val lit = if (active) ((run * lamps).toInt() % lamps == i) else false
+                val a = if (lit) strength else 0.2f * strength + 0.1f
+                drawCircle(color.copy(alpha = a.coerceIn(0f, 1f)), size.minDimension * 0.05f, pos)
+            }
+        }
+        drawCircle(Color.White.copy(alpha = (0.3f + 0.7f * strength).coerceIn(0f, 1f)), size.minDimension * 0.08f, core)
+    }
+}
+
+/** Terminator's voice box: a red oscilloscope trace that swells while it talks. */
+@Composable
+private fun Oscilloscope(active: Boolean, phase: Float, level: Float?, modifier: Modifier, color: Color) {
+    Canvas(modifier) {
+        val mid = size.height / 2
+        drawLine(color.copy(alpha = 0.2f), Offset(0f, mid), Offset(size.width, mid), 1f)
+        val amp = when {
+            !active -> 0.05f
+            level != null -> 0.1f + 0.9f * level
+            else -> 0.35f + 0.5f * abs(sin(phase * 1.7f))
+        } * size.height * 0.45f
+        val steps = 48
+        var prev = Offset(0f, mid)
+        for (i in 1..steps) {
+            val x = size.width * i / steps
+            val y = mid + amp * sin(i * 0.7f + phase * 3f) * sin(i * 0.13f + phase)
+            val p = Offset(x, y)
+            drawLine(color, prev, p, 2.dp.toPx())
+            prev = p
         }
     }
 }

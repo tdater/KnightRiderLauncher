@@ -46,7 +46,8 @@ class GeminiAssistantClient(
         driverName: String,
         vehicleContext: String,
         webSearch: Boolean,
-        persona: PersonaStyle
+        persona: PersonaStyle,
+        character: FilmCharacter? = null
     ): AssistantResult = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) {
             return@withContext AssistantResult.Failure("No Gemini API key yet. Add one under KITT CONFIG, AI CORE.")
@@ -57,7 +58,7 @@ class GeminiAssistantClient(
             val wantSearch = webSearch && !searchRefused
             fun body(search: Boolean) = requestBody(
                 userPrompt, history,
-                KittPersona.systemInstruction(persona, driverName, search, vehicleContext),
+                KittPersona.systemInstruction(persona, driverName, search, vehicleContext, character),
                 search
             )
 

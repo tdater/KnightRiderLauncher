@@ -19,7 +19,8 @@ object KittPersona {
         persona: PersonaStyle,
         driverName: String,
         webSearch: Boolean,
-        vehicleContext: String
+        vehicleContext: String,
+        character: FilmCharacter? = null
     ): String {
         val name = driverName.trim()
         val addressing = if (name.isNotEmpty()) {
@@ -35,6 +36,7 @@ object KittPersona {
         }
         return """
             |${character(persona)}
+            |${character?.personality?.let { "$it The personality setting above still decides how crude you are." } ?: ""}
             |$addressing
             |
             |Rules that never bend:

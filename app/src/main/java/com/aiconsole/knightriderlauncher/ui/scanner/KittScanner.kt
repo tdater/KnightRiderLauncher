@@ -99,6 +99,10 @@ fun KittScanner(
             code.draw(this, levels, color, pulse, frameNanos)
             return@Canvas
         }
+        if (hud == HudStyle.Future && shiftLevel == null) {
+            drawFlux(frameNanos, color, pulse, fast = alert || rpmFraction() > 0.6f)
+            return@Canvas
+        }
         clipRect {
             val gap = size.height * if (hud == HudStyle.Terminator) 0.12f else 0.22f
             val lampWidth = (size.width - gap * (lamps + 1)) / lamps
@@ -174,6 +178,39 @@ private fun DrawScope.drawVisor(levels: FloatArray, color: Color, pulse: Float) 
         size = Size(size.width, slotHeight)
     )
     drawLine(color.copy(alpha = 0.55f), Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1.dp.toPx())
+}
+
+private const val FLUX_CELLS = 28
+
+/**
+ * Back to the Future: the flux capacitor laid out flat. Pulses of blue-white light run in from
+ * both ends to a bright core in the middle, faster when the engine works hard.
+ */
+private fun DrawScope.drawFlux(now: Long, color: Color, pulse: Float, fast: Boolean) {
+    val period = if (fast) 420_000_000L else 900_000_000L
+    val phase = (now % period).toFloat() / period
+    val gap = size.height * 0.16f
+    val cell = (size.width - gap * (FLUX_CELLS + 1)) / FLUX_CELLS
+    val h = size.height * 0.5f
+    val top = (size.height - h) / 2
+    for (i in 0 until FLUX_CELLS) {
+        val d = kotlin.math.abs(i + 0.5f - FLUX_CELLS / 2f) / (FLUX_CELLS / 2f) // 0 centre, 1 edge
+        var level = 0f
+        for (k in 0 until 3) {
+            val p = (phase + k / 3f) % 1f
+            val head = 1f - p // pulses travel from the edge (1) to the centre (0)
+            val dist = d - head
+            level = maxOf(level, kotlin.math.exp(-(dist * dist) / 0.006f))
+        }
+        level = maxOf(level, (1f - d * 4f).coerceAtLeast(0f)) * pulse
+        val x = gap + i * (cell + gap)
+        drawRect(color.copy(alpha = 0.12f), Offset(x, top), Size(cell, h))
+        if (level > 0.02f) {
+            drawRect(lerp(color, Color.White, level * 0.7f).copy(alpha = level), Offset(x, top), Size(cell, h))
+        }
+    }
+    drawLine(KittBezel, Offset(0f, 0f), Offset(size.width, 0f), 1f)
+    drawLine(KittBezel, Offset(0f, size.height - 1f), Offset(size.width, size.height - 1f), 1f)
 }
 
 private const val MATRIX_GLYPHS = 16

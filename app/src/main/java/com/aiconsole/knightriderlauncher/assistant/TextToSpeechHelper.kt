@@ -1,5 +1,8 @@
 package com.aiconsole.knightriderlauncher.assistant
 
+import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
+import com.aiconsole.knightriderlauncher.ui.theme.hud
+
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -170,8 +173,10 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
 
     /** Plays chunks through Gemini speech, prefetching the next while one plays. Returns how many were spoken. */
     private suspend fun sayNeural(chunks: List<String>, urgent: Boolean): Int = supervisorScope {
-        val voice = settings.geminiVoice.value
-        val style = if (urgent) GeminiSpeechProtocol.URGENT_STYLE else GeminiSpeechProtocol.STYLE
+        val film = filmCharacter()
+        val voice = film?.geminiVoice ?: settings.geminiVoice.value
+        val baseStyle = film?.style ?: GeminiSpeechProtocol.STYLE
+        val style = if (urgent) "$baseStyle For this line: firm, focused and urgent, still in character." else baseStyle
         val timeout = if (urgent) URGENT_TIMEOUT_MS else CHUNK_TIMEOUT_MS
         fun fetch(index: Int) = async(Dispatchers.IO) { neural.synthesize(chunks[index], voice, style) }
 
@@ -205,6 +210,10 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
     private suspend fun sayLocal(chunks: List<String>) {
         val ok = withTimeoutOrNull(LOCAL_INIT_TIMEOUT_MS) { localReady.await() } ?: false
         if (!ok) return // No TTS engine installed; the answer is still shown on screen.
+        // Film characters get their own pitch and pace on the device voice too.
+        val film = filmCharacter()
+        tts.setPitch(film?.pitch?.times(0.92f) ?: 0.92f)
+        tts.setSpeechRate(film?.rate?.times(0.96f) ?: 0.96f)
         for (chunk in chunks) {
             val id = "kitt-${System.nanoTime()}"
             val done = CompletableDeferred<Unit>()
@@ -249,6 +258,9 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
             continuation.resumeWithException(IOException("Couldn't play ${file.name}", e))
         }
     }
+
+    private fun filmCharacter(): FilmCharacter? =
+        if (settings.filmCharacters.value) FilmCharacter.forStyle(ThemeState.theme.hud) else null
 
     private companion object {
         const val TAG = "KittVoice"

@@ -1,5 +1,8 @@
 package com.aiconsole.knightriderlauncher.assistant
 
+import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
+import com.aiconsole.knightriderlauncher.ui.theme.hud
+
 import android.database.SQLException
 import com.aiconsole.knightriderlauncher.data.settings.AiProvider
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
@@ -36,7 +39,8 @@ class AssistantRepository(
                     driverName = driverName,
                     vehicleContext = context,
                     webSearch = settings.webSearch.value,
-                    persona = settings.persona.value
+                    persona = settings.persona.value,
+                    character = filmCharacter()
                 )
                 // A retired model was swapped for a live one: remember it.
                 if (result is AssistantResult.Answer && result.engine.isNotEmpty() && result.engine != requested) {
@@ -53,7 +57,8 @@ class AssistantRepository(
                 vehicleContext = context,
                 persona = settings.persona.value,
                 webGrounded = PerplexityRouting.needsWeb(prompt, useDiagnosticModel, settings.webSearch.value),
-                localModel = settings.perplexityLocalModel.value
+                localModel = settings.perplexityLocalModel.value,
+                character = filmCharacter()
             )
         }
     }
@@ -70,4 +75,8 @@ class AssistantRepository(
     private companion object {
         const val BASELINE_DAYS = 30L
     }
+
+    /** The film theme's character, when one is on and the driver wants it. */
+    private fun filmCharacter(): FilmCharacter? =
+        if (settings.filmCharacters.value) FilmCharacter.forStyle(ThemeState.theme.hud) else null
 }

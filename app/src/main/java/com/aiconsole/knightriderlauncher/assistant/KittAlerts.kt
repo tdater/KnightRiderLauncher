@@ -4,6 +4,8 @@ import android.util.Log
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
 import com.aiconsole.knightriderlauncher.data.settings.PersonaStyle
 import com.aiconsole.knightriderlauncher.obd.DrivingEvent
+import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
+import com.aiconsole.knightriderlauncher.ui.theme.hud
 import com.aiconsole.knightriderlauncher.obd.DtcDecoder
 import com.aiconsole.knightriderlauncher.obd.GaugeStore
 import com.aiconsole.knightriderlauncher.obd.ObdManager
@@ -126,6 +128,12 @@ class KittAlerts(
         }
         val name = settings.driverName.value.trim()
         val who = if (name.isNotEmpty()) ", $name" else ""
+        val film = if (settings.filmCharacters.value) FilmCharacter.forStyle(ThemeState.theme.hud) else null
+        if (film != null) {
+            val hello = film.greeting(part, who)
+            raise("greeting", line(hello, "$hello Try not to crash this damn thing.", "$hello Now drive, for fuck's sake."), severe = false, cooldownMs = 0)
+            return
+        }
         raise(
             "greeting",
             line(

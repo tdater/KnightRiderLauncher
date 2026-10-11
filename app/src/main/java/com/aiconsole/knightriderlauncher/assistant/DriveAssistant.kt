@@ -42,6 +42,9 @@ class DriveAssistant(
     private val scope: CoroutineScope
 ) {
     private val monitor = DrivingMonitor()
+
+    /** When this drive started (the OBD link came up), for Back to the Future's "last time departed". */
+    val departedAt = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
     private var driveStart = 0L
     private var fuelWarned = false
     private var overSince = 0L
@@ -56,6 +59,7 @@ class DriveAssistant(
                 if (state is ObdState.Connected && !connected) {
                     connected = true
                     driveStart = now
+                    departedAt.value = now
                     fuelWarned = false
                     monitor.reset()
                 } else if (state !is ObdState.Connected && connected) {

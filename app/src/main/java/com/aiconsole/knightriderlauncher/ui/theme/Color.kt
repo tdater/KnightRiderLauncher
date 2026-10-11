@@ -18,17 +18,19 @@ enum class UiTheme(val label: String) {
     Terminator("Terminator"),
     RoboCop("RoboCop"),
     // Stored as "Colorado" (its first name) so earlier selections carry over.
-    Colorado("The Matrix")
+    Colorado("The Matrix"),
+    BackToTheFuture("Back to the Future")
 }
 
-/** Film HUD themes change more than colours: scanner, panels, overlay and HUD text. */
-enum class HudStyle { Terminator, RoboCop, Matrix }
+/** Film HUD themes change more than colours: scanner, panels, overlay, HUD text, intro and voice. */
+enum class HudStyle { Terminator, RoboCop, Matrix, Future }
 
 val UiTheme.hud: HudStyle?
     get() = when (this) {
         UiTheme.Terminator -> HudStyle.Terminator
         UiTheme.RoboCop -> HudStyle.RoboCop
         UiTheme.Colorado -> HudStyle.Matrix
+        UiTheme.BackToTheFuture -> HudStyle.Future
         else -> null
     }
 
@@ -259,6 +261,27 @@ val RoboCopPalette = KittPalette(
     grey = Color(0xFF8399B3)
 )
 
+// Back to the Future (1985): brushed DeLorean stainless and the time circuits' three rows of
+// LED readouts (red destination, green present, amber last departed), flux-capacitor blue-white.
+val FuturePalette = KittPalette(
+    black = Color(0xFF07080A),
+    charcoal = Color(0xFF15181C),
+    graphite = Color(0xFF22262B),
+    bezel = Color(0xFF6E757D),
+    grid = Color(0xFF30353B),
+    accent = Color(0xFF9FE8FF),
+    accentDim = Color(0xFF173A48),
+    danger = Color(0xFFFF3A2A),
+    amber = Color(0xFFFFB627),
+    amberDim = Color(0xFF3F2C06),
+    green = Color(0xFF3DFF6E),
+    greenDim = Color(0xFF0E3A1A),
+    yellow = Color(0xFFFF7A1A),
+    info = Color(0xFF9FE8FF),
+    white = Color(0xFFE9ECEF),
+    grey = Color(0xFF9AA2AA)
+)
+
 fun UiTheme.palette(): KittPalette = when (this) {
     UiTheme.Kitt -> KittClassicPalette
     UiTheme.Karr -> KarrPalette
@@ -270,6 +293,7 @@ fun UiTheme.palette(): KittPalette = when (this) {
     UiTheme.Terminator -> TerminatorPalette
     UiTheme.RoboCop -> RoboCopPalette
     UiTheme.Colorado -> ColoradoPalette
+    UiTheme.BackToTheFuture -> FuturePalette
 }
 
 /** Swatches for the custom accent; 0 means "use the theme's own". */

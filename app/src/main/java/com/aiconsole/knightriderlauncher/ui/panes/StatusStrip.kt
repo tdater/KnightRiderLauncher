@@ -42,6 +42,9 @@ import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
 import com.aiconsole.knightriderlauncher.ui.theme.hud
+import androidx.compose.foundation.layout.fillMaxHeight
+import com.aiconsole.knightriderlauncher.ui.theme.TimeCircuitsStrip
+import com.aiconsole.knightriderlauncher.ui.theme.HudStyle
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,8 +81,14 @@ fun StatusStrip(modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(now)), style = MaterialTheme.typography.labelLarge, color = DashWhite)
-        ThemeState.theme.hud?.let { style ->
+        if (ThemeState.theme.hud == HudStyle.Future) {
+            // Back to the Future: the time circuits replace the clock.
+            val route by app.navigator.state.collectAsState()
+            val departed by app.driveAssistant.departedAt.collectAsState()
+            val arrival = route.remainingS?.takeIf { route.status == com.aiconsole.knightriderlauncher.nav.NavStatus.Navigating }?.let { now + (it * 1000).toLong() }
+            TimeCircuitsStrip(arrival, now, departed, Modifier.fillMaxHeight().padding(vertical = 2.dp))
+        } else Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(now)), style = MaterialTheme.typography.labelLarge, color = DashWhite)
+        ThemeState.theme.hud?.takeIf { it != HudStyle.Future }?.let { style ->
             val lines = FilmHudText.lines(style)
             Text(
                 "${FilmHudText.brand(style)} · ${lines[((now / 8_000) % lines.size).toInt()]}",

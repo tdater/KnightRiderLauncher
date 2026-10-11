@@ -67,6 +67,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.ReadoutFont
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
+import com.aiconsole.knightriderlauncher.ui.theme.assistantName
 
 // Large sans-serif for answers: readable at a glance from the driver's seat.
 private val AnswerStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 20.sp, lineHeight = 28.sp)
@@ -135,7 +136,7 @@ fun AssistantOverlay(
     }
 
     KittPanel(
-        title = "KITT",
+        title = assistantName(),
         modifier = modifier.pointerInput(Unit) { detectTapGestures {} },
         accent = ScannerRed,
         trailing = {

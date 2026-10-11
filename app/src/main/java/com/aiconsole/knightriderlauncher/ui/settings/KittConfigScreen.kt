@@ -71,6 +71,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 import com.aiconsole.knightriderlauncher.ui.theme.UiTheme
+import com.aiconsole.knightriderlauncher.ui.theme.hud
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -432,6 +433,9 @@ fun KittConfigScreen(onDismiss: () -> Unit, modifier: Modifier = Modifier) {
             }
             item { Text("THEME", style = MaterialTheme.typography.labelMedium, color = DashGrey) }
             item { ChoiceRow(UiTheme.entries, theme, { it.label }, { settings.uiTheme.set(it) }, color = ScannerRed) }
+            if (theme.hud != null) {
+                item { FilmThemeSettings(app) }
+            }
             item { Text("ACCENT COLOUR", style = MaterialTheme.typography.labelMedium, color = DashGrey) }
             item {
                 LazyRow(Modifier.height(44.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

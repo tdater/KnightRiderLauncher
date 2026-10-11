@@ -135,7 +135,10 @@ import com.aiconsole.knightriderlauncher.ui.scanner.ScannerOverlayService
 import com.aiconsole.knightriderlauncher.ui.settings.KittConfigScreen
 import com.aiconsole.knightriderlauncher.ui.theme.DashAmber
 import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
+import com.aiconsole.knightriderlauncher.ui.theme.FilmAlertHeader
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudOverlay
+import com.aiconsole.knightriderlauncher.ui.theme.HudStyle
+import com.aiconsole.knightriderlauncher.ui.theme.ThemeIntro
 import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.KnightRiderLauncherTheme
@@ -940,6 +943,13 @@ fun LauncherRoot(
         // Film HUD themes: scanlines and vignette / visor glow over everything (no touch handling).
         ThemeState.theme.hud?.let { FilmHudOverlay(it, Modifier.fillMaxSize()) }
 
+        // A film theme's boot sequence when it comes on (at start and on switching).
+        val introsOn = (context.applicationContext as? KittApplication)?.settings?.filmIntros?.state?.collectAsState()?.value ?: false
+        var intro by remember { mutableStateOf<HudStyle?>(null) }
+        val hudNow = ThemeState.theme.hud
+        LaunchedEffect(hudNow) { intro = if (introsOn) hudNow else null }
+        intro?.let { style -> ThemeIntro(style, onDone = { intro = null }) }
+
         if (saver) {
             Screensaver(onWake = {
                 saver = false
@@ -1035,14 +1045,25 @@ private fun AlertBanner(alert: KittAlert, onDismiss: () -> Unit, modifier: Modif
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         VoiceModulator(active = true, modifier = Modifier.width(72.dp).height(44.dp), color = color)
-        Text(
-            text = alert.message,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleMedium,
-            color = DashWhite,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis
-        )
+        val style = ThemeState.theme.hud
+        // The Matrix types KITT's messages out like a terminal.
+        var shown by remember(alert.at) { mutableIntStateOf(if (style == HudStyle.Matrix) 0 else alert.message.length) }
+        LaunchedEffect(alert.at, style) {
+            while (shown < alert.message.length) {
+                delay(18)
+                shown += 2
+            }
+        }
+        Column(Modifier.weight(1f)) {
+            FilmAlertHeader(style, color)
+            Text(
+                text = alert.message.take(shown) + if (shown < alert.message.length) "█" else "",
+                style = MaterialTheme.typography.titleMedium,
+                color = DashWhite,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         alert.action?.let { action ->
             KittButton(action.label, { onAction(action) }, Modifier.height(48.dp).width(120.dp), LedGreen, active = true)
         }

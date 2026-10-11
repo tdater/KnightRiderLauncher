@@ -60,6 +60,9 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
 import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.LocalLiteMode
+import com.aiconsole.knightriderlauncher.ui.theme.FilmMapReticle
+import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
+import com.aiconsole.knightriderlauncher.ui.theme.hud
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 
 /** Live driving readouts overlaid on the navigation pane, KITT-dash style. */
@@ -146,6 +149,8 @@ fun NavigationPane(
             } else {
                 NavigationVisualizer(Modifier.fillMaxSize())
             }
+            // Terminator and RoboCop lock onto the vehicle.
+            if (mapOn) FilmMapReticle(ThemeState.theme.hud, Modifier.fillMaxSize())
 
             Column(
                 Modifier.align(Alignment.TopStart).padding(10.dp),

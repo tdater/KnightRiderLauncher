@@ -44,6 +44,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.KittCharcoal
 import com.aiconsole.knightriderlauncher.ui.theme.KittGrid
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
+import com.aiconsole.knightriderlauncher.ui.theme.assistantName
 import com.aiconsole.knightriderlauncher.ui.trip.rememberRecentTrips
 import java.util.Locale
 
@@ -214,7 +215,7 @@ private fun AssistantSection(onClick: () -> Unit, speaking: Boolean, modifier: M
                 .weight(1f)
         )
         Text(
-            text = "KITT",
+            text = assistantName(),
             modifier = Modifier.fillMaxWidth(),
             style = MaterialTheme.typography.titleMedium,
             color = ScannerRed,

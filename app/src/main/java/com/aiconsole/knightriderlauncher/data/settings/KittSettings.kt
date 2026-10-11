@@ -240,6 +240,10 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
     val parkingSpot = stringPref("parking_spot", "")
     /** Original KITT-style sound effects (scanner whoosh, turbo boost). */
     val soundEffects = boolPref("sound_effects", false)
+    /** Film themes change KITT's voice and personality to the film's character. */
+    val filmCharacters = boolPref("film_characters", true)
+    /** Film themes play their boot sequence when they come on. */
+    val filmIntros = boolPref("film_intros", true)
     /** Theme for night time ("" = keep the day theme), e.g. Stealth or Night Vision. */
     val nightTheme = stringPref("night_theme", "")
     /** The stream window keeps playing in a corner mini player when you leave the Drive page. */
