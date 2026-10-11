@@ -164,6 +164,9 @@ class ObdManager(
     /** Connection steps and failures, tagged by layer (transport, adapter, ELM init, ECU, decode). */
     val linkEvents: StateFlow<List<LinkEvent>> = _linkEvents.asStateFlow()
 
+    /** An adapter scan's outcome, for the connection log and problem reports. */
+    fun logScan(message: String, ok: Boolean) = logEvent(LinkLayer.Transport, message, ok)
+
     private fun logEvent(layer: LinkLayer, message: String, ok: Boolean = true) {
         log.add(LinkEvent(System.currentTimeMillis(), layer, message, ok))
         _linkEvents.value = log.snapshot()

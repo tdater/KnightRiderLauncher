@@ -46,3 +46,15 @@ class NewCommandsTest {
         assertEquals(SiteConfig("claude.ai", false, null, null, null, null), SiteSettings.decode("claude.ai|0|||")["claude.ai"])
     }
 }
+
+class BluetoothAddressTest {
+    @org.junit.Test
+    fun normalizesAddresses() {
+        val n = com.aiconsole.knightriderlauncher.obd.BluetoothAddress::normalize
+        org.junit.Assert.assertEquals("00:1D:A5:68:98:8A", n("00:1d:a5:68:98:8a"))
+        org.junit.Assert.assertEquals("00:1D:A5:68:98:8A", n(" 00-1D-A5-68-98-8A "))
+        org.junit.Assert.assertEquals("00:1D:A5:68:98:8A", n("001DA568988A"))
+        org.junit.Assert.assertNull(n("00:1D:A5:68:98"))
+        org.junit.Assert.assertNull(n("GG:1D:A5:68:98:8A"))
+    }
+}

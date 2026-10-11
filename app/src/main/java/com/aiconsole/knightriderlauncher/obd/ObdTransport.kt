@@ -81,7 +81,11 @@ class ClassicBluetoothTransport(context: Context, private val address: String) :
         } catch (_: SecurityException) {
             // Needs BLUETOOTH_SCAN on Android 12+; harmless to skip.
         }
-        val device = bt.getRemoteDevice(address)
+        val device = try {
+            bt.getRemoteDevice(BluetoothAddress.normalize(address) ?: address)
+        } catch (e: IllegalArgumentException) {
+            throw IOException("\"$address\" isn't a Bluetooth address (it looks like 00:1D:A5:68:98:8A)", e)
+        }
         // Head-unit Bluetooth stacks differ a lot from phones, so try every way in:
         // 1) secure SPP via SDP, 2) insecure SPP (modules that can't do authenticated links),
         // 3) raw RFCOMM channel 1 (clones with broken SDP records).

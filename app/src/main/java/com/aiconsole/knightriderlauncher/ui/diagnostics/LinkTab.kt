@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.aiconsole.knightriderlauncher.KittApplication
 import com.aiconsole.knightriderlauncher.obd.AdapterConfig
 import com.aiconsole.knightriderlauncher.obd.AdapterDiscovery
+import androidx.compose.ui.Alignment
+import com.aiconsole.knightriderlauncher.obd.BluetoothAddress
 import com.aiconsole.knightriderlauncher.obd.AdapterType
 import com.aiconsole.knightriderlauncher.obd.ManufacturerProfiles
 import com.aiconsole.knightriderlauncher.obd.ObdConnectionService
@@ -83,11 +85,17 @@ fun LinkTab(app: KittApplication) {
     val bleFound = remember { mutableStateListOf<AdapterConfig>() }
     val classicFound = remember { mutableStateListOf<AdapterConfig>() }
     var scanning by remember { mutableStateOf<Job?>(null) }
+    var report by remember { mutableStateOf(AdapterDiscovery.report(context)) }
+    val scanProblems = remember { mutableStateListOf<String>() }
+    var scanSummary by remember { mutableStateOf<String?>(null) }
+    var showUnnamed by remember { mutableStateOf(false) }
+    var manualAddress by remember { mutableStateOf("") }
     var wifiAddress by remember { mutableStateOf("192.168.0.10:35000") }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         hasPermission = AdapterDiscovery.hasPermissions(context)
         if (hasPermission) paired = AdapterDiscovery.pairedDevices(context)
+        report = AdapterDiscovery.report(context)
     }
 
     fun requestPermissions() {
@@ -181,6 +189,15 @@ fun LinkTab(app: KittApplication) {
         }
 
         item { SectionHeader("Bluetooth adapters", color = DashAmber) }
+        // Layer 1 first: what Android's Bluetooth looks like to apps on this head unit.
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                report.lines().forEach { line ->
+                    val bad = line.contains("NOT") || line.contains("OFF") || line.contains("missing") || line.startsWith("Location is off")
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = if (bad) AlertRed else DashGrey)
+                }
+            }
+        }
         if (!hasPermission) {
             item {
                 KittButton("Allow Bluetooth access", ::requestPermissions, Modifier.fillMaxWidth().height(44.dp), DashAmber, active = true)
@@ -211,11 +228,14 @@ fun LinkTab(app: KittApplication) {
                         onClick = {
                             bleFound.clear()
                             classicFound.clear()
+                            scanProblems.clear()
+                            scanSummary = null
+                            report = AdapterDiscovery.report(context)
                             paired = AdapterDiscovery.pairedDevices(context)
                             scanning = scope.launch {
                                 val classic = launch {
                                     withTimeoutOrNull(15_000) {
-                                        AdapterDiscovery.scanClassic(context).collect { found ->
+                                        AdapterDiscovery.scanClassic(context) { scanProblems += it }.collect { found ->
                                             val known = classicFound.any { it.address == found.address } ||
                                                 paired.any { it.address == found.address }
                                             if (!known) classicFound += found
@@ -223,11 +243,16 @@ fun LinkTab(app: KittApplication) {
                                     }
                                 }
                                 withTimeoutOrNull(10_000) {
-                                    AdapterDiscovery.scanBle(context).collect { found ->
+                                    AdapterDiscovery.scanBle(context) { scanProblems += it }.collect { found ->
                                         if (bleFound.none { it.address == found.address }) bleFound += found
                                     }
                                 }
                                 classic.join()
+                                val unnamed = (classicFound + bleFound).count { AdapterDiscovery.isUnnamed(it.name) }
+                                scanSummary = "Scan finished: ${classicFound.size} Bluetooth Classic and ${bleFound.size} BLE devices seen" +
+                                    (if (unnamed > 0) " ($unnamed without a name)." else ".") +
+                                    if (classicFound.isEmpty() && bleFound.isEmpty()) " Nothing at all usually means this head unit's Bluetooth isn't open to apps; see below." else ""
+                                app.obd.logScan(scanSummary.orEmpty() + scanProblems.joinToString(" ", prefix = " "), ok = classicFound.isNotEmpty() || bleFound.isNotEmpty())
                                 scanning = null
                             }
                         },
@@ -248,7 +273,9 @@ fun LinkTab(app: KittApplication) {
                     )
                 }
             }
-            items(classicFound.sortedByDescending { AdapterDiscovery.isLikelyObd(it.name) }, key = { "c_${it.address}" }) { device ->
+            scanSummary?.let { item { HelpText(it, color = DashAmber) } }
+            items(scanProblems.toList(), key = { "e_$it" }) { HelpText(it, color = AlertRed) }
+            items(classicFound.filter { showUnnamed || !AdapterDiscovery.isUnnamed(it.name) }.sortedByDescending { AdapterDiscovery.isLikelyObd(it.name) }, key = { "c_${it.address}" }) { device ->
                 KittButton(
                     label = "BT · ${device.name}${if (AdapterDiscovery.isLikelyObd(device.name)) "  · OBD" else ""}",
                     onClick = { choose(device) },
@@ -257,13 +284,65 @@ fun LinkTab(app: KittApplication) {
                     active = saved?.address == device.address
                 )
             }
-            items(bleFound.sortedByDescending { AdapterDiscovery.isLikelyObd(it.name) }, key = { "b_${it.address}" }) { device ->
+            items(bleFound.filter { showUnnamed || !AdapterDiscovery.isUnnamed(it.name) }.sortedByDescending { AdapterDiscovery.isLikelyObd(it.name) }, key = { "b_${it.address}" }) { device ->
                 KittButton(
-                    label = "BLE · ${device.name}",
+                    label = "BLE · ${device.name}${if (AdapterDiscovery.isLikelyObd(device.name)) "  · OBD" else ""}",
                     onClick = { choose(device) },
                     modifier = Modifier.fillMaxWidth().height(44.dp),
                     color = LedGreen,
                     active = saved?.address == device.address
+                )
+            }
+            val unnamedCount = (classicFound + bleFound).count { AdapterDiscovery.isUnnamed(it.name) }
+            if (unnamedCount > 0) {
+                item {
+                    KittButton(
+                        if (showUnnamed) "Hide devices without a name" else "Show $unnamedCount devices without a name",
+                        { showUnnamed = !showUnnamed },
+                        Modifier.fillMaxWidth().height(40.dp),
+                        DashGrey
+                    )
+                }
+            }
+
+            // When the head unit hides the adapter from every list: connect straight to its address.
+            item { SectionHeader("Connect by address", color = DashAmber) }
+            item {
+                HelpText(
+                    "If the adapter never shows up, find its address with a Bluetooth scanner app on your phone " +
+                        "(for example nRF Connect) while it's plugged in with the ignition on, and enter it here. " +
+                        "Veepeak OBDCheck BLE is a BLE adapter: choose BLE. Most ELM327 dongles that ask for a PIN, " +
+                        "like the OBDAi, are Classic."
+                )
+            }
+            item {
+                val normalized = BluetoothAddress.normalize(manualAddress)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    KittTextField(manualAddress, { manualAddress = it }, "00:1D:A5:68:98:8A", Modifier.weight(1f))
+                    KittButton(
+                        "Classic",
+                        { normalized?.let { choose(AdapterConfig(AdapterType.CLASSIC, it, "OBD $it")) } },
+                        Modifier.height(48.dp).width(96.dp),
+                        LedGreen,
+                        enabled = normalized != null
+                    )
+                    KittButton(
+                        "BLE",
+                        { normalized?.let { choose(AdapterConfig(AdapterType.BLE, it, "OBD BLE $it")) } },
+                        Modifier.height(48.dp).width(80.dp),
+                        LedGreen,
+                        enabled = normalized != null
+                    )
+                }
+            }
+            if (manualAddress.isNotBlank() && BluetoothAddress.normalize(manualAddress) == null) {
+                item { HelpText("That isn't a Bluetooth address yet: six pairs of 0-9 / A-F, like 00:1D:A5:68:98:8A.", color = AlertRed) }
+            }
+            item {
+                HelpText(
+                    "Still nothing? Many head units run Bluetooth through their own phone app, separate from Android. " +
+                        "Pair the adapter there (set that app's PIN to 1234 or 0000 first), then come back and tap Scan. " +
+                        "If Android Bluetooth shows as not present above, a Wi-Fi OBD adapter is the dependable choice."
                 )
             }
         }

@@ -110,7 +110,11 @@ class BleTransport(context: Context, private val address: String) : ObdTransport
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
             ?: throw IOException("This head unit has no Bluetooth")
         if (!adapter.isEnabled) throw IOException("Bluetooth is off")
-        val device = adapter.getRemoteDevice(address)
+        val device = try {
+            adapter.getRemoteDevice(BluetoothAddress.normalize(address) ?: address)
+        } catch (e: IllegalArgumentException) {
+            throw IOException("\"$address\" isn't a Bluetooth address (it looks like 00:1D:A5:68:98:8A)", e)
+        }
         val deferred = CompletableDeferred<Unit>()
         ready = deferred
         gatt = device.connectGatt(appContext, false, callback, BluetoothDevice.TRANSPORT_LE)
