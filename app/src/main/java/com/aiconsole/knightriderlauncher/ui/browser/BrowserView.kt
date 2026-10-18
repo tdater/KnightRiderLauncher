@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -91,7 +92,11 @@ fun BrowserView(
     bookmarks: KittSettings.Pref<String>,
     picker: @Composable (BrowserSession) -> Unit,
     modifier: Modifier = Modifier,
-    extraTools: @Composable () -> Unit = {}
+    extraTools: @Composable () -> Unit = {},
+    /** Game mode / theater: no tab strip or toolbar, the page gets the space. */
+    compact: Boolean = false,
+    /** Drawn over a web page (not the home page), e.g. the Games page's touch pad. */
+    pageOverlay: @Composable BoxScope.() -> Unit = {}
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as KittApplication
@@ -113,7 +118,21 @@ fun BrowserView(
     val current = session.current
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (fullscreen == null) {
+        // Held pop-ups and downloads, so nothing a site does goes unnoticed.
+        session.blockedPopup?.let { url ->
+            Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                HelpText("Pop-up held back: ${StreamUrls.titleOf(url)}", Modifier.weight(1f), color = DashAmber)
+                KittButton("Open", { session.openBlockedPopup() }, Modifier.height(32.dp).width(72.dp), DashAmber)
+                KittButton("✕", { session.blockedPopup = null }, Modifier.height(32.dp).width(40.dp), DashGrey)
+            }
+        }
+        session.downloadMessage?.let { m ->
+            Row(Modifier.fillMaxWidth().height(32.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                HelpText(m, Modifier.weight(1f), color = LedGreen)
+                KittButton("✕", { session.downloadMessage = null }, Modifier.height(28.dp).width(40.dp), DashGrey)
+            }
+        }
+        if (fullscreen == null && !compact) {
             TabStrip(session)
             if (current != null && !current.isPicker && session.pendingInstall == null && !session.showScripts) {
                 Toolbar(session, current, bookmarks, extraTools)
@@ -135,6 +154,7 @@ fun BrowserView(
                 session.split && session.tabs.size > 1 -> SplitPages(session)
                 else -> Page(session, current, Modifier.fillMaxSize())
             }
+            if (current != null && !current.isPicker && !current.gone && session.pendingInstall == null && !session.showScripts) pageOverlay()
             if (fullscreen != null && LocalWebViewHostActive.current) {
                 AndroidView(
                     factory = { fullscreen.also { (it.parent as? ViewGroup)?.removeView(it) } },

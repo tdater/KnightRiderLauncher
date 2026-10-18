@@ -6,6 +6,7 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.BroadcastReceiver
@@ -21,6 +22,9 @@ import androidx.core.location.LocationManagerCompat
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Pure Bluetooth address handling (unit-tested). */
 object BluetoothAddress {
@@ -32,6 +36,31 @@ object BluetoothAddress {
         val hex = text.trim().uppercase().filter { it.isLetterOrDigit() }
         if (hex.length != 12 || hex.any { it !in "0123456789ABCDEF" }) return null
         return hex.chunked(2).joinToString(":")
+    }
+}
+
+/** Plain-language Android Bluetooth error codes (unit-tested). */
+object BluetoothErrors {
+    /** android.bluetooth.le.ScanCallback.SCAN_FAILED_* codes. */
+    fun scanFailure(code: Int): String = "BLE scan refused by Android (error $code: " + when (code) {
+        1 -> "a scan was already running"
+        2 -> "the Bluetooth stack has no free scan slots, usually left behind by another app. Turning Bluetooth off and on clears it"
+        3 -> "internal Bluetooth error"
+        4 -> "this head unit doesn't offer BLE scanning to apps"
+        5 -> "out of Bluetooth hardware resources"
+        6 -> "scanning too often; wait 30 seconds"
+        else -> "unknown"
+    } + ")."
+
+    /** android.bluetooth.BluetoothGatt status codes seen when a BLE link drops or won't open. */
+    fun gattStatus(status: Int): String = when (status) {
+        0 -> "status 0"
+        8 -> "status 8, link timed out"
+        19 -> "status 19, the adapter closed the link"
+        22 -> "status 22, the head unit closed the link"
+        62 -> "status 62, the adapter didn't answer"
+        133 -> "status 133, the head unit's Bluetooth couldn't open the link"
+        else -> "status $status"
     }
 }
 
@@ -123,10 +152,11 @@ object AdapterDiscovery {
                         } catch (_: SecurityException) {
                             return
                         }
-                        // Inquiry can report BLE-only devices too; those belong to the BLE transport.
-                        if (info.first == BluetoothDevice.DEVICE_TYPE_LE) return
+                        // Discovery reports BLE-only devices too. They're kept as BLE: on head units
+                        // whose BLE scanner is refused, this is the only way to find a BLE adapter.
+                        val type = if (info.first == BluetoothDevice.DEVICE_TYPE_LE) AdapterType.BLE else AdapterType.CLASSIC
                         // Unnamed devices are kept (listed last): some dongles send no name to inquiry.
-                        trySend(AdapterConfig(AdapterType.CLASSIC, device.address, info.second ?: "$UNNAMED ${device.address}"))
+                        trySend(AdapterConfig(type, device.address, info.second ?: "$UNNAMED ${device.address}"))
                     }
                     BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> close()
                 }
@@ -168,43 +198,122 @@ object AdapterDiscovery {
     }
 
     /** Emits BLE devices as they're found (unnamed ones labelled by address). Collect with a timeout. */
+    fun scanBle(context: Context, onProblem: (String) -> Unit = {}): Flow<AdapterConfig> =
+        scanBleDevices(context, null, onProblem).map { (device, name) ->
+            AdapterConfig(AdapterType.BLE, device.address, name ?: "$UNNAMED ${device.address}")
+        }
+
+    /**
+     * Looks for one BLE device for up to [timeoutMs]. Connecting by address to a BLE device the
+     * Bluetooth stack has never seen often fails (it doesn't know the address type), so the BLE
+     * transport looks first; the scanned device carries the right type. Null if not seen.
+     */
+    suspend fun findBle(context: Context, address: String, timeoutMs: Long): BluetoothDevice? =
+        withTimeoutOrNull(timeoutMs) { scanBleDevices(context, address).firstOrNull()?.first }
+
+    /**
+     * BLE scan that tries every way a head-unit stack may accept: the modern scanner at low
+     * latency, then balanced, then the old pre-Lollipop API. Some units refuse the first.
+     */
     @SuppressLint("MissingPermission")
-    fun scanBle(context: Context, onProblem: (String) -> Unit = {}): Flow<AdapterConfig> = callbackFlow {
-        val scanner = context.getSystemService(BluetoothManager::class.java)?.adapter?.bluetoothLeScanner
-        if (scanner == null) {
+    private fun scanBleDevices(
+        context: Context,
+        onlyAddress: String?,
+        onProblem: (String) -> Unit = {}
+    ): Flow<Pair<BluetoothDevice, String?>> = callbackFlow {
+        val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter
+        val scanner = adapter?.takeIf { it.isEnabled }?.bluetoothLeScanner
+        if (adapter == null || scanner == null) {
             onProblem("BLE scan: not available (Bluetooth off, or no Bluetooth Low Energy for apps on this unit).")
             close()
             return@callbackFlow
         }
-        val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val name = try {
-                    result.device.name
-                } catch (_: SecurityException) {
-                    null
-                } ?: result.scanRecord?.deviceName ?: "$UNNAMED ${result.device.address}"
-                trySend(AdapterConfig(AdapterType.BLE, result.device.address, name))
-            }
+        fun found(device: BluetoothDevice, recordName: String?) {
+            if (onlyAddress != null && !device.address.equals(onlyAddress, ignoreCase = true)) return
+            val name = try {
+                device.name
+            } catch (_: SecurityException) {
+                null
+            } ?: recordName
+            trySend(device to name)
+        }
 
-            override fun onScanFailed(errorCode: Int) {
-                onProblem("BLE scan failed (Android error $errorCode). Toggle Bluetooth off and on, then scan again.")
+        @Suppress("DEPRECATION")
+        val legacy = BluetoothAdapter.LeScanCallback { device, _, _ -> found(device, null) }
+        var legacyRunning = false
+        val modes = ArrayDeque(listOf(ScanSettings.SCAN_MODE_LOW_LATENCY, ScanSettings.SCAN_MODE_BALANCED))
+        lateinit var callback: ScanCallback
+
+        fun startNext(lastError: Int?) {
+            val mode = modes.removeFirstOrNull()
+            if (mode != null) {
+                try {
+                    val filters = onlyAddress?.let { listOf(ScanFilter.Builder().setDeviceAddress(it.uppercase()).build()) }
+                    scanner.startScan(filters, ScanSettings.Builder().setScanMode(mode).build(), callback)
+                } catch (_: SecurityException) {
+                    onProblem("BLE scan: permission refused.")
+                    close()
+                } catch (_: IllegalArgumentException) {
+                    startNext(lastError)
+                }
+                return
+            }
+            legacyRunning = try {
+                @Suppress("DEPRECATION")
+                adapter.startLeScan(legacy)
+            } catch (_: SecurityException) {
+                false
+            }
+            if (!legacyRunning) {
+                onProblem(BluetoothErrors.scanFailure(lastError ?: 0))
                 close()
             }
         }
-        try {
-            val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-            scanner.startScan(null, settings, callback)
-        } catch (_: SecurityException) {
-            onProblem("BLE scan: permission refused.")
-            close()
+
+        callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) = found(result.device, result.scanRecord?.deviceName)
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>) =
+                results.forEach { found(it.device, it.scanRecord?.deviceName) }
+
+            override fun onScanFailed(errorCode: Int) {
+                try {
+                    scanner.stopScan(this)
+                } catch (_: Exception) {
+                }
+                startNext(errorCode)
+            }
         }
+        startNext(null)
         awaitClose {
             try {
                 scanner.stopScan(callback)
+                @Suppress("DEPRECATION")
+                if (legacyRunning) adapter.stopLeScan(legacy)
             } catch (_: SecurityException) {
             } catch (_: IllegalStateException) {
                 // Bluetooth turned off mid-scan.
             }
+        }
+    }
+
+    /**
+     * The transport [config] really needs: a device Android already knows as BLE-only can't take
+     * a Classic connection (and the reverse), whichever button was tapped when it was entered.
+     */
+    @SuppressLint("MissingPermission")
+    fun transportFor(context: Context, config: AdapterConfig): AdapterType {
+        if (config.type == AdapterType.WIFI) return config.type
+        val address = BluetoothAddress.normalize(config.address) ?: return config.type
+        val type = try {
+            context.getSystemService(BluetoothManager::class.java)?.adapter?.getRemoteDevice(address)?.type
+        } catch (_: Exception) {
+            null
+        }
+        return when (type) {
+            BluetoothDevice.DEVICE_TYPE_LE -> AdapterType.BLE
+            BluetoothDevice.DEVICE_TYPE_CLASSIC -> AdapterType.CLASSIC
+            else -> config.type
         }
     }
 

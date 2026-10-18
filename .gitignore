@@ -29,3 +29,6 @@ local.properties
 /.idea/deploymentTargetSelector.xml
 /.idea/deviceManager.xml
 /.idea/emulatorDisplays.xml
+
+# On-device voice library, downloaded by the build (see app/build.gradle.kts)
+/app/libs/

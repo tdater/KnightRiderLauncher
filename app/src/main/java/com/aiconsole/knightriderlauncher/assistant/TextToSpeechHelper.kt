@@ -1,7 +1,6 @@
 package com.aiconsole.knightriderlauncher.assistant
 
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
-import com.aiconsole.knightriderlauncher.ui.theme.hud
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -39,12 +38,17 @@ import kotlin.coroutines.resumeWithException
  *
  * With [VoiceEngine.Gemini] each line is synthesised by Gemini's neural speech (see
  * [GeminiSpeechClient]) in sentence chunks, so playback starts while the rest is generated.
- * The device TTS engine takes over whenever that fails, times out or there's no key or network.
+ * [VoiceEngine.OnDevice] uses a free neural voice running on the head unit ([OnDeviceVoice]),
+ * which also stands in for Gemini without a key or network once a voice is downloaded.
+ * The device TTS engine takes over whenever those fail.
  * Everything is queued and played on the main thread.
  */
 class TextToSpeechHelper(context: Context, private val settings: KittSettings, scope: CoroutineScope) {
 
     private val neural = GeminiSpeechClient(context.applicationContext, settings)
+
+    /** The free on-device neural voice and its downloadable voices (see [LocalVoices]). */
+    val onDevice = OnDeviceVoice(context.applicationContext)
     private val ducker = AudioDucker(context)
     private val main = CoroutineScope(scope.coroutineContext + Dispatchers.Main)
 
@@ -164,12 +168,46 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
     private suspend fun say(utterance: Utterance) {
         val chunks = GeminiSpeechProtocol.chunks(GeminiSpeechProtocol.speakable(utterance.text))
         if (chunks.isEmpty()) return
-        val spoken = if (!utterance.deviceOnly && useNeural()) sayNeural(chunks, utterance.urgent) else 0
+        // Gemini when chosen and keyed, then the free on-device voice, then the device TTS.
+        var spoken = if (!utterance.deviceOnly && useNeural()) sayNeural(chunks, utterance.urgent) else 0
+        if (spoken < chunks.size && !utterance.deviceOnly && useOnDevice()) spoken += sayOnDevice(chunks.drop(spoken), utterance.urgent)
         if (spoken < chunks.size) sayLocal(chunks.drop(spoken))
     }
 
     private fun useNeural(): Boolean =
         settings.voiceEngine.value == VoiceEngine.Gemini && settings.geminiKey.isNotEmpty()
+
+    /** The free offline voice: chosen, or standing in for Gemini; only once a voice is downloaded. */
+    private fun useOnDevice(): Boolean =
+        settings.voiceEngine.value != VoiceEngine.Device && onDevice.unavailable == null &&
+            onDevice.isInstalled(LocalVoices.byId(settings.localVoice.value))
+
+    /** Plays chunks through the on-device voice, synthesizing the next while one plays. Returns how many were spoken. */
+    private suspend fun sayOnDevice(chunks: List<String>, urgent: Boolean): Int = supervisorScope {
+        val voice = LocalVoices.byId(settings.localVoice.value)
+        val speaker = settings.localVoiceSpeaker.value
+        val film = filmCharacter()
+        val speed = (film?.rate ?: 1f) * (if (urgent) 1.06f else 1f)
+        // The characters' pitches are tuned for the device voice; a neural voice needs less.
+        val pitch = film?.let { 1f + (it.pitch - 1f) * 0.7f } ?: 1f
+        fun fetch(index: Int) = async(Dispatchers.IO) { onDevice.synthesize(voice, chunks[index], speaker, speed) }
+
+        var next = fetch(0)
+        for (index in chunks.indices) {
+            val clip = try {
+                next.await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "On-device voice failed; using device voice: ${e.message}")
+                null
+            } ?: return@supervisorScope index
+            if (index + 1 < chunks.size) next = fetch(index + 1)
+            _speaking.value = true
+            onDevice.play(clip, ducker.attributes, pitch)
+        }
+        chunks.size
+    }
 
     /** Plays chunks through Gemini speech, prefetching the next while one plays. Returns how many were spoken. */
     private suspend fun sayNeural(chunks: List<String>, urgent: Boolean): Int = supervisorScope {
@@ -260,7 +298,7 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
     }
 
     private fun filmCharacter(): FilmCharacter? =
-        if (settings.filmCharacters.value) FilmCharacter.forStyle(ThemeState.theme.hud) else null
+        if (settings.filmCharacters.value) ThemeState.filmCharacter else null
 
     private companion object {
         const val TAG = "KittVoice"

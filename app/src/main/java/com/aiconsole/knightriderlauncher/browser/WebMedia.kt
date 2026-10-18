@@ -6,7 +6,11 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.util.Log
 import android.view.ViewGroup
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.widget.FrameLayout
@@ -38,7 +42,27 @@ object WebMedia {
             parkingRef = value?.let(::WeakReference)
         }
 
+    /**
+     * A page is playing, or is paused only until audio focus comes back. "Hey KITT" must stay
+     * off then: each recognizer session takes focus briefly, which paused the page, and the
+     * page sounding silent let the next session start, so music stopped and started in a loop.
+     */
+    val busy: Boolean get() = pausedUntilGain.isNotEmpty() || playingTabs().isNotEmpty()
+
+    /**
+     * Web pages on screen right now (kept by [BrowserTab.attached]). Every launcher frame makes
+     * an on-screen WebView composite again, so the launcher's own animations slow down meanwhile.
+     */
+    var pagesOnScreen by mutableIntStateOf(0)
+        private set
+
+    internal fun pageShown(shown: Boolean) {
+        pagesOnScreen = (pagesOnScreen + if (shown) 1 else -1).coerceAtLeast(0)
+    }
+
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        // In problem reports: shows which app interrupts a page's playback, and how.
+        Log.i("WebMedia", "Audio focus change $change while ${playingTabs().size} page(s) play")
         when (MediaFocus.onChange(change)) {
             MediaFocus.Action.Pause -> {
                 hasFocus = false

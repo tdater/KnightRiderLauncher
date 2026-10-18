@@ -87,13 +87,13 @@ private fun CircuitRow(label: String, row: TimeCircuitRow, color: Color, modifie
  * out character by character in The Matrix), then it fades away by itself. Tap to skip.
  */
 @Composable
-fun ThemeIntro(style: HudStyle, onDone: () -> Unit, modifier: Modifier = Modifier) {
-    val lines = remember(style) { FilmHudText.intro(style) }
-    val typed = style == HudStyle.Matrix
+fun ThemeIntro(edition: FilmEdition, onDone: () -> Unit, modifier: Modifier = Modifier) {
+    val lines = remember(edition) { FilmHudText.intro(edition) }
+    val typed = edition.film == HudStyle.Matrix
     // The first line shows at once, so the screen is never blank while the launcher is still starting.
-    var shownChars by remember(style) { mutableIntStateOf(if (typed) 0 else lines.first().length + 1) }
+    var shownChars by remember(edition) { mutableIntStateOf(if (typed) 0 else lines.first().length + 1) }
     val total = lines.sumOf { it.length + 1 }
-    LaunchedEffect(style) {
+    LaunchedEffect(edition) {
         if (typed) {
             while (shownChars < total) {
                 delay(30)
@@ -108,12 +108,9 @@ fun ThemeIntro(style: HudStyle, onDone: () -> Unit, modifier: Modifier = Modifie
         delay(1_400)
         onDone()
     }
-    val (background, color) = when (style) {
-        HudStyle.Terminator -> Color(0xF2140000) to Color(0xFFFF3B2A)
-        HudStyle.RoboCop -> Color(0xF2020A14) to Color(0xFF66CCFF)
-        HudStyle.Matrix -> Color(0xF2000000) to Color(0xFF00FF41)
-        HudStyle.Future -> Color(0xF20A0C0E) to Color(0xFF9FE8FF)
-    }
+    // Each edition boots in its own colours: its palette's black glass and accent.
+    val background = edition.palette.black.copy(alpha = 0.95f)
+    val color = edition.palette.accent
     Box(
         modifier
             .fillMaxSize()
@@ -134,7 +131,7 @@ fun ThemeIntro(style: HudStyle, onDone: () -> Unit, modifier: Modifier = Modifie
                     color = color
                 )
             }
-            if (style == HudStyle.Future && shownChars >= total) {
+            if (edition.film == HudStyle.Future && shownChars >= total) {
                 TimeCircuitsStrip(destination = null, present = System.currentTimeMillis(), departed = null, modifier = Modifier.height(30.dp))
             }
         }
@@ -149,8 +146,8 @@ fun ThemeIntro(style: HudStyle, onDone: () -> Unit, modifier: Modifier = Modifie
 
 /** Film-styled alert header: the line above KITT's message in the banner. */
 @Composable
-fun FilmAlertHeader(style: HudStyle?, color: Color) {
-    val title = FilmHudText.alertTitle(style) ?: return
+fun FilmAlertHeader(edition: FilmEdition?, color: Color) {
+    val title = FilmHudText.alertTitle(edition) ?: return
     Text(title, style = MaterialTheme.typography.labelMedium, color = color)
 }
 
@@ -159,7 +156,7 @@ fun FilmAlertHeader(style: HudStyle?, color: Color) {
 fun assistantName(): String {
     val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.aiconsole.knightriderlauncher.KittApplication
     val on = app?.settings?.filmCharacters?.state?.collectAsState()?.value ?: false
-    return (if (on) com.aiconsole.knightriderlauncher.assistant.FilmCharacter.forStyle(ThemeState.theme.hud)?.shortName else null) ?: "KITT"
+    return (if (on) ThemeState.filmCharacter?.shortName else null) ?: "KITT"
 }
 
 /**
@@ -167,12 +164,21 @@ fun assistantName(): String {
  * (Terminator) or a visor reticle (RoboCop). Drawn over the map, never touchable.
  */
 @Composable
-fun FilmMapReticle(style: HudStyle?, modifier: Modifier = Modifier) {
+fun FilmMapReticle(edition: FilmEdition?, modifier: Modifier = Modifier) {
+    val style = edition?.film
     if (style != HudStyle.Terminator && style != HudStyle.RoboCop) return
     val paint = remember { android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { typeface = android.graphics.Typeface.MONOSPACE } }
     androidx.compose.foundation.Canvas(modifier) {
         val c = center
-        val color = if (style == HudStyle.Terminator) Color(0xFFFF3B2A) else Color(0xFF66CCFF)
+        val color = edition?.palette?.accent ?: Color(0xFFFF3B2A)
+        // Each edition reads the target its own way.
+        val (label, match) = when (edition) {
+            FilmEdition.T1000 -> "FORM: VEHICLE" to "MIMIC 100%"
+            FilmEdition.FutureWar -> "HK LOCK: GROUND UNIT" to "IR SIGNATURE 97.2%"
+            FilmEdition.Ed209 -> "COMPLIANCE ZONE" to "SUBJECT: COMPLIANT"
+            FilmEdition.DeltaCity -> "OCP ASSET" to "VALUE: APPRECIATING"
+            else -> "SUBJECT: VEHICLE" to "MATCH 99.8%"
+        }
         val stroke = 1.5.dp.toPx()
         if (style == HudStyle.Terminator) {
             val half = 46.dp.toPx()
@@ -187,8 +193,8 @@ fun FilmMapReticle(style: HudStyle?, modifier: Modifier = Modifier) {
             corner(c.x + half, c.y + half, -1f, -1f)
             paint.textSize = 9.dp.toPx()
             paint.color = color.copy(alpha = 0.85f).toArgb()
-            drawContext.canvas.nativeCanvas.drawText("SUBJECT: VEHICLE", c.x - half, c.y - half - 6.dp.toPx(), paint)
-            drawContext.canvas.nativeCanvas.drawText("MATCH 99.8%", c.x - half, c.y + half + 14.dp.toPx(), paint)
+            drawContext.canvas.nativeCanvas.drawText(label, c.x - half, c.y - half - 6.dp.toPx(), paint)
+            drawContext.canvas.nativeCanvas.drawText(match, c.x - half, c.y + half + 14.dp.toPx(), paint)
         } else {
             val r = 40.dp.toPx()
             drawCircle(color.copy(alpha = 0.8f), r, c, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
@@ -199,6 +205,12 @@ fun FilmMapReticle(style: HudStyle?, modifier: Modifier = Modifier) {
                     color, androidx.compose.ui.geometry.Offset(c.x + dx * (r * 1.6f + 2), c.y + dy * (r * 1.6f + 2)),
                     androidx.compose.ui.geometry.Offset(c.x + dx * (r * 1.6f + tick), c.y + dy * (r * 1.6f + tick)), stroke
                 )
+            }
+            if (edition != FilmEdition.Visor) {
+                paint.textSize = 9.dp.toPx()
+                paint.color = color.copy(alpha = 0.85f).toArgb()
+                drawContext.canvas.nativeCanvas.drawText(label, c.x + r * 1.7f, c.y - r * 1.2f, paint)
+                drawContext.canvas.nativeCanvas.drawText(match, c.x + r * 1.7f, c.y - r * 1.2f + 12.dp.toPx(), paint)
             }
         }
     }

@@ -233,21 +233,25 @@ fun LinkTab(app: KittApplication) {
                             report = AdapterDiscovery.report(context)
                             paired = AdapterDiscovery.pairedDevices(context)
                             scanning = scope.launch {
-                                val classic = launch {
-                                    withTimeoutOrNull(15_000) {
-                                        AdapterDiscovery.scanClassic(context) { scanProblems += it }.collect { found ->
-                                            val known = classicFound.any { it.address == found.address } ||
-                                                paired.any { it.address == found.address }
-                                            if (!known) classicFound += found
-                                        }
-                                    }
-                                }
-                                withTimeoutOrNull(10_000) {
+                                // One after the other: many head-unit radios refuse a BLE scan
+                                // while Classic discovery runs (the scan failed at once).
+                                withTimeoutOrNull(8_000) {
                                     AdapterDiscovery.scanBle(context) { scanProblems += it }.collect { found ->
                                         if (bleFound.none { it.address == found.address }) bleFound += found
                                     }
                                 }
-                                classic.join()
+                                withTimeoutOrNull(15_000) {
+                                    AdapterDiscovery.scanClassic(context) { scanProblems += it }.collect { found ->
+                                        if (found.type == AdapterType.BLE) {
+                                            // Discovery also sees BLE devices: the fallback when the BLE scan is refused.
+                                            if (bleFound.none { it.address == found.address }) bleFound += found
+                                            return@collect
+                                        }
+                                        val known = classicFound.any { it.address == found.address } ||
+                                            paired.any { it.address == found.address }
+                                        if (!known) classicFound += found
+                                    }
+                                }
                                 val unnamed = (classicFound + bleFound).count { AdapterDiscovery.isUnnamed(it.name) }
                                 scanSummary = "Scan finished: ${classicFound.size} Bluetooth Classic and ${bleFound.size} BLE devices seen" +
                                     (if (unnamed > 0) " ($unnamed without a name)." else ".") +

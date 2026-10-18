@@ -77,6 +77,7 @@ import com.aiconsole.knightriderlauncher.assistant.LauncherEvent
 import com.aiconsole.knightriderlauncher.assistant.MicGuard
 import com.aiconsole.knightriderlauncher.assistant.SavageLines
 import com.aiconsole.knightriderlauncher.browser.BrowserSession
+import com.aiconsole.knightriderlauncher.browser.SiteHomeRules
 import com.aiconsole.knightriderlauncher.browser.WebMedia
 import com.aiconsole.knightriderlauncher.data.AppLists
 import com.aiconsole.knightriderlauncher.data.AppUsage
@@ -136,6 +137,7 @@ import com.aiconsole.knightriderlauncher.ui.settings.KittConfigScreen
 import com.aiconsole.knightriderlauncher.ui.theme.DashAmber
 import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
 import com.aiconsole.knightriderlauncher.ui.theme.FilmAlertHeader
+import com.aiconsole.knightriderlauncher.ui.theme.FilmEdition
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudOverlay
 import com.aiconsole.knightriderlauncher.ui.theme.HudStyle
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeIntro
@@ -388,7 +390,7 @@ class MainActivity : ComponentActivity() {
     private fun launchChecks() {
         if (checked) return
         checked = true
-        SoundFx.scanner()
+        ThemeState.theme.hud?.let(SoundFx::film) ?: SoundFx.scanner()
         if (!HomeScreen.isDefault(this)) kitt.alerts.notHomeScreen()
         val settings = kitt.settings
         val info = runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
@@ -582,7 +584,10 @@ fun LauncherRoot(
     }
     val stream = remember {
         val app = context.applicationContext as KittApplication
-        BrowserSession("stream", app.settings, app.userscripts, lite = { app.lite.value })
+        BrowserSession(
+            "stream", app.settings, app.userscripts, lite = { app.lite.value }, holdPopups = true,
+            onVisit = { title, url -> app.settings.streamVisits.set(SiteHomeRules.encodeVisits(SiteHomeRules.record(SiteHomeRules.decodeVisits(app.settings.streamVisits.value), title, url, System.currentTimeMillis()))) }
+        )
     }
     // AI and Games keep their tabs (and sign-ins) while you move between pages.
     val aiBrowser = remember {
@@ -591,7 +596,10 @@ fun LauncherRoot(
     }
     val gamesBrowser = remember {
         val app = context.applicationContext as KittApplication
-        BrowserSession("games", app.settings, app.userscripts, gamepad = true, lite = { app.lite.value })
+        BrowserSession(
+            "games", app.settings, app.userscripts, gamepad = true, lite = { app.lite.value }, holdPopups = true,
+            onVisit = { title, url -> app.settings.gameVisits.set(SiteHomeRules.encodeVisits(SiteHomeRules.record(SiteHomeRules.decodeVisits(app.settings.gameVisits.value), title, url, System.currentTimeMillis()))) }
+        )
     }
     DisposableEffect(aiBrowser, gamesBrowser) {
         onDispose {
@@ -613,11 +621,18 @@ fun LauncherRoot(
         when {
             browser.fullscreenView != null -> browser.exitFullscreen()
             browser.canGoBack() -> browser.goBack()
+            browser.immersive -> browser.immersive = false
             browser === stream -> stream.visible = false
         }
     }
+    // Game mode (Games page) and theater (stream window) hide the rail, dock and status strip.
+    val gameMode = gamesBrowser.immersive && pager.currentPage == HomePage.Games.ordinal
+    val theater = stream.immersive && stream.visible && pager.currentPage == HomePage.Drive.ordinal
+    val chromeless = (gameMode || theater) && overlay == LauncherOverlay.None
     LaunchedEffect(homeTrigger) {
         if (homeTrigger > 0) {
+            gamesBrowser.immersive = false
+            stream.immersive = false
             overlay = LauncherOverlay.None
             pager.animateScrollToPage(HomePage.Drive.ordinal)
         }
@@ -725,7 +740,7 @@ fun LauncherRoot(
             val configuration = LocalConfiguration.current
             val scannerHeight = DeviceProfile.scannerHeightDp(configuration.screenHeightDp.toFloat()).dp
             KittScanner(Modifier.fillMaxWidth().height(scannerHeight), alert = dash.alert?.severe == true, shift = dash.shift)
-            if (statusStrip) StatusStrip(onClick = { quickSettings = !quickSettings })
+            if (statusStrip && !chromeless) StatusStrip(onClick = { quickSettings = !quickSettings })
 
             // From the screen's shape, not the space left: the on-screen keyboard shrinks
             // maxHeight, and flipping the layout then would rebuild the map and drop its search.
@@ -735,7 +750,7 @@ fun LauncherRoot(
                 Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(if (rail) 6.dp else 8.dp)
+                    .padding(if (chromeless) 0.dp else if (rail) 6.dp else 8.dp)
             ) {
                 val gap = if (rail) 6.dp else 8.dp
                 val dockHeight = (maxHeight * if (isTall) 0.15f else 0.20f).coerceIn(112.dp, 280.dp)
@@ -805,7 +820,8 @@ fun LauncherRoot(
                         state = pager,
                         modifier = pagesModifier.edgeSwipe(pager, scope),
                         // Swipe anywhere outside the map and web pages (they keep their own drags) to change page.
-                        userScrollEnabled = true,
+                        // In game mode every swipe belongs to the game.
+                        userScrollEnabled = !chromeless,
                         pageSpacing = gap
                     ) { page ->
                         // Web pages attach only on the page the pager settled on, never while pre-composed.
@@ -844,7 +860,12 @@ fun LauncherRoot(
                 }
                 val selectPage = { page: Int -> scope.launch { pager.animateScrollToPage(page) }; Unit }
 
-                if (rail) {
+                if (theater) {
+                    // Theater: the stream window takes the whole screen below the scanner.
+                    StreamWindow(stream, Modifier.fillMaxSize())
+                } else if (chromeless) {
+                    pages(Modifier.fillMaxSize())
+                } else if (rail) {
                     Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gap)) {
                         NavRail(
                             labels = HomePage.entries.map { it.label },
@@ -941,14 +962,20 @@ fun LauncherRoot(
         }
 
         // Film HUD themes: scanlines and vignette / visor glow over everything (no touch handling).
-        ThemeState.theme.hud?.let { FilmHudOverlay(it, Modifier.fillMaxSize()) }
+        ThemeState.edition?.let { FilmHudOverlay(it, Modifier.fillMaxSize()) }
 
         // A film theme's boot sequence when it comes on (at start and on switching).
         val introsOn = (context.applicationContext as? KittApplication)?.settings?.filmIntros?.state?.collectAsState()?.value ?: false
-        var intro by remember { mutableStateOf<HudStyle?>(null) }
-        val hudNow = ThemeState.theme.hud
-        LaunchedEffect(hudNow) { intro = if (introsOn) hudNow else null }
-        intro?.let { style -> ThemeIntro(style, onDone = { intro = null }) }
+        var intro by remember { mutableStateOf<FilmEdition?>(null) }
+        val editionNow = ThemeState.edition
+        var firstEdition by remember { mutableStateOf(true) }
+        LaunchedEffect(editionNow) {
+            intro = if (introsOn) editionNow else null
+            // Switching film or edition plays its start-up sound (at launch, launchChecks does).
+            if (!firstEdition) editionNow?.let { SoundFx.film(it.film) }
+            firstEdition = false
+        }
+        intro?.let { edition -> ThemeIntro(edition, onDone = { intro = null }) }
 
         if (saver) {
             Screensaver(onWake = {
@@ -1055,7 +1082,7 @@ private fun AlertBanner(alert: KittAlert, onDismiss: () -> Unit, modifier: Modif
             }
         }
         Column(Modifier.weight(1f)) {
-            FilmAlertHeader(style, color)
+            FilmAlertHeader(ThemeState.edition, color)
             Text(
                 text = alert.message.take(shown) + if (shown < alert.message.length) "█" else "",
                 style = MaterialTheme.typography.titleMedium,

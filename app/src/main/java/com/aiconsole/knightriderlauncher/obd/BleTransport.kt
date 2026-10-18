@@ -11,10 +11,13 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
@@ -32,34 +35,56 @@ class BleTransport(context: Context, private val address: String) : ObdTransport
     private val appContext = context.applicationContext
     override val incoming = Channel<ByteArray>(Channel.UNLIMITED)
 
-    private var gatt: BluetoothGatt? = null
+    @Volatile private var gatt: BluetoothGatt? = null
     private var writeChar: BluetoothGattCharacteristic? = null
-    private var ready: CompletableDeferred<Unit>? = null
+    @Volatile private var ready: CompletableDeferred<Unit>? = null
     private var pendingWrite: CompletableDeferred<Boolean>? = null
     private val writeLock = Mutex()
     private var chunkSize = 20
 
+    /** Services were requested on this link (after the MTU answer, or without it if none comes). */
+    @Volatile private var discovering = false
+
+    /** The link finished setting up; a disconnect from here on ends the session. */
+    @Volatile private var linked = false
+    private val main = Handler(Looper.getMainLooper())
+
+    private fun discover(g: BluetoothGatt) {
+        if (discovering) return
+        discovering = true
+        if (!g.discoverServices()) ready?.completeExceptionally(IOException("the head unit refused to read the adapter's services"))
+    }
+
     private val callback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
-            when (newState) {
-                BluetoothProfile.STATE_CONNECTED -> if (!g.requestMtu(185)) g.discoverServices()
-                BluetoothProfile.STATE_DISCONNECTED -> {
-                    val error = IOException("Adapter disconnected (status $status)")
+            if (g !== gatt) return // A late callback from an earlier attempt.
+            when {
+                newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS -> {
+                    // Some stacks accept the MTU request and never answer it: discover anyway.
+                    if (g.requestMtu(185)) main.postDelayed({ if (g === gatt) discover(g) }, MTU_WAIT_MS) else discover(g)
+                }
+                newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS -> {
+                    val error = IOException("adapter disconnected (${BluetoothErrors.gattStatus(status)})")
                     ready?.completeExceptionally(error)
                     pendingWrite?.complete(false)
-                    incoming.close(error)
+                    // Only a live session ends here; a failed attempt leaves the channel for the next one.
+                    if (linked) incoming.close(error)
                 }
             }
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) chunkSize = (mtu - 3).coerceAtLeast(20)
-            g.discoverServices()
+            discover(g)
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                ready?.completeExceptionally(IOException("couldn't read the adapter's services (${BluetoothErrors.gattStatus(status)})"))
+                return
+            }
             val (notify, write) = findCharacteristics(g) ?: run {
-                ready?.completeExceptionally(IOException("No OBD serial service found on this BLE device"))
+                ready?.completeExceptionally(IOException("no OBD serial service found on this BLE device"))
                 return
             }
             writeChar = write
@@ -87,7 +112,7 @@ class BleTransport(context: Context, private val address: String) : ObdTransport
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 ready?.complete(Unit)
             } else {
-                ready?.completeExceptionally(IOException("Couldn't enable adapter notifications ($status)"))
+                ready?.completeExceptionally(IOException("couldn't enable adapter notifications ($status)"))
             }
         }
 
@@ -106,29 +131,78 @@ class BleTransport(context: Context, private val address: String) : ObdTransport
         }
     }
 
+    /**
+     * Head-unit BLE stacks are much pickier than phones, so this tries several ways in:
+     * 1) when Android has never seen the adapter, scan for it first (connecting to an unknown
+     * address often fails with GATT error 133 because the stack doesn't know its address type);
+     * 2) a direct connection; 3) a background ("auto") connection, which some stacks need;
+     * 4) on Android 13+, the address as a random BLE address in case it isn't a public one.
+     * A pause between attempts lets the stack release the last one.
+     */
     override suspend fun connect() {
         val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
             ?: throw IOException("This head unit has no Bluetooth")
         if (!adapter.isEnabled) throw IOException("Bluetooth is off")
-        val device = try {
-            adapter.getRemoteDevice(BluetoothAddress.normalize(address) ?: address)
-        } catch (e: IllegalArgumentException) {
-            throw IOException("\"$address\" isn't a Bluetooth address (it looks like 00:1D:A5:68:98:8A)", e)
+        val normalized = BluetoothAddress.normalize(address)
+            ?: throw IOException("\"$address\" isn't a Bluetooth address (it looks like 00:1D:A5:68:98:8A)")
+        var device = adapter.getRemoteDevice(normalized)
+        val unknown = runCatching { device.type == BluetoothDevice.DEVICE_TYPE_UNKNOWN }.getOrDefault(true)
+        if (unknown) AdapterDiscovery.findBle(appContext, normalized, FIND_MS)?.let { device = it }
+        val attempts = buildList {
+            add(Triple("direct", device, false))
+            add(Triple("auto", device, true))
+            if (unknown && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Triple("random address", adapter.getRemoteLeDevice(normalized, BluetoothDevice.ADDRESS_TYPE_RANDOM), false))
+            }
         }
+        val failures = mutableListOf<String>()
+        for ((index, attempt) in attempts.withIndex()) {
+            val (name, target, auto) = attempt
+            if (index > 0) delay(RETRY_GAP_MS)
+            try {
+                connectOnce(target, auto)
+                linked = true
+                return
+            } catch (e: IOException) {
+                failures += "$name: ${e.message}"
+            }
+        }
+        throw IOException(
+            "BLE adapter didn't connect (${failures.joinToString("; ")}). Check it's plugged in with the ignition on, " +
+                "not connected to a phone or another app, and that its address was entered with BLE."
+        )
+    }
+
+    private suspend fun connectOnce(device: BluetoothDevice, auto: Boolean) {
         val deferred = CompletableDeferred<Unit>()
         ready = deferred
-        gatt = device.connectGatt(appContext, false, callback, BluetoothDevice.TRANSPORT_LE)
+        discovering = false
         try {
-            withTimeout(15_000) { deferred.await() }
+            gatt = device.connectGatt(appContext, auto, callback, BluetoothDevice.TRANSPORT_LE)
+                ?: throw IOException("the head unit refused to open a BLE link")
+            withTimeout(if (auto) AUTO_TIMEOUT_MS else DIRECT_TIMEOUT_MS) { deferred.await() }
         } catch (e: TimeoutCancellationException) {
-            close()
-            throw IOException("BLE adapter didn't respond. Is it powered and in range?", e)
+            closeGatt()
+            throw IOException("no answer", e)
         } catch (e: CancellationException) {
-            close()
+            closeGatt()
             throw e
         } catch (e: IOException) {
-            close()
+            closeGatt()
             throw e
+        } catch (e: SecurityException) {
+            closeGatt()
+            throw IOException("Bluetooth permission refused", e)
+        }
+    }
+
+    private fun closeGatt() {
+        val g = gatt
+        gatt = null
+        try {
+            g?.disconnect()
+            g?.close()
+        } catch (_: SecurityException) {
         }
     }
 
@@ -164,12 +238,7 @@ class BleTransport(context: Context, private val address: String) : ObdTransport
     }
 
     override fun close() {
-        try {
-            gatt?.disconnect()
-            gatt?.close()
-        } catch (_: SecurityException) {
-        }
-        gatt = null
+        closeGatt()
         incoming.close()
     }
 
@@ -192,6 +261,11 @@ class BleTransport(context: Context, private val address: String) : ObdTransport
     }
 
     private companion object {
+        const val FIND_MS = 6_000L
+        const val MTU_WAIT_MS = 1_500L
+        const val RETRY_GAP_MS = 1_000L
+        const val DIRECT_TIMEOUT_MS = 12_000L
+        const val AUTO_TIMEOUT_MS = 20_000L
         val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         val KNOWN_SERVICES: List<UUID> = listOf(
             "0000fff0-0000-1000-8000-00805f9b34fb",

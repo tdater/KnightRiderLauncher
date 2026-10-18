@@ -47,6 +47,13 @@ object SiteSettings {
         return h.startsWith("accounts.google.") || h == "accounts.youtube.com" || h == "myaccount.google.com"
     }
 
+    /**
+     * Web apps whose desktop version is far too heavy for head-unit hardware (YouTube Music's
+     * desktop player stalled and reloaded) but whose mobile site works: mobile unless the driver
+     * picked Desktop for that site.
+     */
+    fun prefersMobile(host: String?): Boolean = keyFor(host) == "music.youtube.com"
+
     fun blockAllowed(host: String?): Boolean {
         val h = keyFor(host)
         return NEVER_BLOCK.none { h == it || h.endsWith(".$it") }

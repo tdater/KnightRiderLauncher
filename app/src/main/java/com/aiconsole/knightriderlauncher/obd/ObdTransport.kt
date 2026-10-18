@@ -1,12 +1,18 @@
 package com.aiconsole.knightriderlauncher.obd
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import java.io.Closeable
 import java.io.IOException
 import java.io.InputStream
@@ -88,25 +94,30 @@ class ClassicBluetoothTransport(context: Context, private val address: String) :
         }
         // Head-unit Bluetooth stacks differ a lot from phones, so try every way in:
         // 1) secure SPP via SDP, 2) insecure SPP (modules that can't do authenticated links),
-        // 3) raw RFCOMM channel 1 (clones with broken SDP records).
+        // 3) raw RFCOMM channel 1, secure then insecure (clones with broken SDP records).
         val attempts: List<Pair<String, () -> BluetoothSocket>> = listOf(
             "secure SPP" to { device.createRfcommSocketToServiceRecord(SPP_UUID) },
             "insecure SPP" to { device.createInsecureRfcommSocketToServiceRecord(SPP_UUID) },
-            "RFCOMM channel 1" to {
-                device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType).invoke(device, 1) as BluetoothSocket
-            }
+            "RFCOMM channel 1" to { channelSocket(device, "createRfcommSocket") },
+            "insecure RFCOMM channel 1" to { channelSocket(device, "createInsecureRfcommSocket") }
         )
         val failures = mutableListOf<String>()
         var connected: BluetoothSocket? = null
-        for ((name, open) in attempts) {
+        for ((index, attempt) in attempts.withIndex()) {
+            val (name, open) = attempt
+            // A failed RFCOMM attempt takes a moment to release the link; trying again at once
+            // fails on many head-unit stacks even when the next method would work.
+            if (index > 0) delay(RETRY_GAP_MS)
             var candidate: BluetoothSocket? = null
             try {
                 candidate = open()
-                candidate.connect()
+                connectCancellable(candidate)
                 connected = candidate
                 break
+            } catch (e: CancellationException) {
+                runCatching { candidate?.close() }
+                throw e
             } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
                 runCatching { candidate?.close() }
                 failures += "$name: ${e.message ?: e.javaClass.simpleName}"
             }
@@ -130,8 +141,31 @@ class ClassicBluetoothTransport(context: Context, private val address: String) :
         incoming.close()
     }
 
+    private fun channelSocket(device: BluetoothDevice, method: String): BluetoothSocket =
+        device.javaClass.getMethod(method, Int::class.javaPrimitiveType).invoke(device, 1) as BluetoothSocket
+
+    /**
+     * BluetoothSocket.connect() blocks for up to ~12 s and ignores coroutine cancellation, so a
+     * cancelled attempt (driver tapped Connect again, picked another adapter) used to keep
+     * dialling the adapter alongside the new one and both failed. Closing the socket on
+     * cancellation aborts it at once.
+     */
+    @SuppressLint("MissingPermission") // Checked by the UI before connecting.
+    private suspend fun connectCancellable(socket: BluetoothSocket) = suspendCancellableCoroutine<Unit> { cont ->
+        cont.invokeOnCancellation { runCatching { socket.close() } }
+        thread(name = "obd-connect", isDaemon = true) {
+            try {
+                socket.connect()
+                cont.resume(Unit)
+            } catch (e: Exception) {
+                cont.resumeWithException(e)
+            }
+        }
+    }
+
     private companion object {
         val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+        const val RETRY_GAP_MS = 600L
     }
 }
 

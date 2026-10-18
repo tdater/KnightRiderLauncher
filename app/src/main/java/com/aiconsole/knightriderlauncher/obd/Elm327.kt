@@ -1,6 +1,7 @@
 package com.aiconsole.knightriderlauncher.obd
 
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -53,8 +54,16 @@ class Elm327(private val transport: ObdTransport) {
 
     /** Resets the adapter, applies fast settings, and lets it find the car's protocol. */
     suspend fun initialize(protocol: String): ElmInfo = exclusive {
+        // Many clones drop bytes sent the instant the link opens, and some greet with a stale
+        // prompt: settle, throw away whatever arrived, and give the reset a second chance.
+        delay(LINK_SETTLE_MS)
+        while (transport.incoming.tryReceive().isSuccess) Unit
         buffer.setLength(0)
-        send("ATZ", 5_000) // Reset: prints the "ELM327 vX.X" banner.
+        try {
+            send("ATZ", 5_000) // Reset: prints the "ELM327 vX.X" banner.
+        } catch (_: ElmException) {
+            send("ATZ", 5_000)
+        }
         val version = send("ATI").lines().lastOrNull { it.isNotBlank() }?.trim() ?: "ELM327"
         // Echo off, linefeeds off, spaces off, headers off, adaptive timing, protocol.
         for (command in listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP$protocol")) {
@@ -102,5 +111,6 @@ class Elm327(private val transport: ObdTransport) {
 
     private companion object {
         const val DEFAULT_TIMEOUT_MS = 2_000L
+        const val LINK_SETTLE_MS = 300L
     }
 }

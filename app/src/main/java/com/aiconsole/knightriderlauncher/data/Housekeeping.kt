@@ -11,6 +11,22 @@ object ReleaseNotes {
 
     val ALL = listOf(
         ReleaseNote(
+            4,
+            listOf(
+                "Film themes now come in editions: T-800, Liquid Metal and Future War; Visor, ED-209 and OCP Delta City; " +
+                    "Digital Rain, Real World and Zion; DeLorean 1985, Hill Valley 2015 and 1885. Each has its own colours, " +
+                    "scanner, screen effects, readouts and boot sequence. Pick one under KITT Config → Theme.",
+                "Eight new film characters to talk to, three per film; each edition brings its own, or pick your favourite.",
+                "Film start-up sounds (with sound effects on), and a little surprise at 88 km/h in Back to the Future.",
+                "KITT neural (offline): free, natural voices that run on the head unit, no API key. Download one under KITT Config → Voice.",
+                "The Games page is now a full retro-game browser: game site tiles, favourites, continue playing, game mode, " +
+                    "an on-screen touch pad, and controllers that work with every kind of web emulator.",
+                "The stream window has a new home page of free movie, TV, music and radio services (Fandango at Home added), " +
+                    "favourites, continue watching and theater mode. Stronger ad and pop-up blocking in both.",
+                "Bluetooth OBD adapters connect more reliably on head units, and the browser and YouTube Music run smoother.",
+            )
+        ),
+        ReleaseNote(
             3,
             listOf(
                 "System check in KITT Config: every permission and setting KITT needs, with a fix button for each.",

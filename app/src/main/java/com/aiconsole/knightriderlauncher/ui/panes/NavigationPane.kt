@@ -150,7 +150,7 @@ fun NavigationPane(
                 NavigationVisualizer(Modifier.fillMaxSize())
             }
             // Terminator and RoboCop lock onto the vehicle.
-            if (mapOn) FilmMapReticle(ThemeState.theme.hud, Modifier.fillMaxSize())
+            if (mapOn) FilmMapReticle(ThemeState.edition, Modifier.fillMaxSize())
 
             Column(
                 Modifier.align(Alignment.TopStart).padding(10.dp),

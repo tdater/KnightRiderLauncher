@@ -42,6 +42,7 @@ import com.aiconsole.knightriderlauncher.obd.VehicleService
 import com.aiconsole.knightriderlauncher.stream.UserscriptStore
 import com.aiconsole.knightriderlauncher.ui.components.SoundFx
 import com.aiconsole.knightriderlauncher.ui.components.UiSounds
+import com.aiconsole.knightriderlauncher.ui.theme.FilmChoices
 import com.aiconsole.knightriderlauncher.ui.theme.NightModeController
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
 import com.aiconsole.knightriderlauncher.ui.theme.UiTheme
@@ -207,6 +208,8 @@ class KittApplication : Application() {
         WebMedia.init(this)
         // Apply the saved look before the first frame, then follow changes from KITT Config.
         ThemeState.theme = settings.uiTheme.value
+        ThemeState.filmChoices = FilmChoices.decode(settings.filmChoices.value)
+        appScope.launch(Dispatchers.Main) { settings.filmChoices.state.collect { ThemeState.filmChoices = FilmChoices.decode(it) } }
         // The night theme (if one is chosen) takes over while night mode says it's dark.
         appScope.launch(Dispatchers.Main) {
             combine(settings.uiTheme.state, settings.nightTheme.state, nightMode.night) { day, nightName, dark ->

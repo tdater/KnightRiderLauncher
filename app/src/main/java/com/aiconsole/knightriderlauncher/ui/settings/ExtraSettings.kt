@@ -46,7 +46,10 @@ import com.aiconsole.knightriderlauncher.data.SelfUpdate
 import com.aiconsole.knightriderlauncher.data.Versions
 import com.aiconsole.knightriderlauncher.nav.NavBridge
 import com.aiconsole.knightriderlauncher.obd.AdapterDiscovery
+import com.aiconsole.knightriderlauncher.assistant.FilmCharacter
 import com.aiconsole.knightriderlauncher.ui.components.ChoiceRow
+import com.aiconsole.knightriderlauncher.ui.theme.FilmChoices
+import com.aiconsole.knightriderlauncher.ui.theme.FilmEdition
 import com.aiconsole.knightriderlauncher.ui.components.HelpText
 import com.aiconsole.knightriderlauncher.ui.components.KittButton
 import com.aiconsole.knightriderlauncher.ui.components.KittToggle
@@ -316,18 +319,41 @@ fun ReportToPhoneButton(app: KittApplication) {
     }
 }
 
-/** Film themes: the character's voice and personality, and the boot sequence. */
+/** Film themes: the edition, the character's voice and personality, and the boot sequence. */
 @Composable
 fun FilmThemeSettings(app: KittApplication) {
     val characters by app.settings.filmCharacters.state.collectAsState()
     val intros by app.settings.filmIntros.state.collectAsState()
-    val character = com.aiconsole.knightriderlauncher.assistant.FilmCharacter.forStyle(com.aiconsole.knightriderlauncher.ui.theme.ThemeState.theme.hud)
+    val choicesText by app.settings.filmChoices.state.collectAsState()
+    val film = com.aiconsole.knightriderlauncher.ui.theme.ThemeState.theme.hud ?: return
+    val choices = FilmChoices.decode(choicesText)
+    val edition = FilmChoices.edition(choices, film)
+    val picked = choices[film]?.character
+    val character = FilmChoices.character(choices, film)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("EDITION", style = MaterialTheme.typography.labelMedium, color = DashGrey)
+        ChoiceRow(
+            FilmEdition.forFilm(film),
+            edition,
+            { "${it.label} · ${it.year}" },
+            { app.settings.filmChoices.set(FilmChoices.encode(FilmChoices.withEdition(choices, it))) },
+            color = ScannerRed
+        )
+        HelpText(edition.blurb)
+        Text("CHARACTER", style = MaterialTheme.typography.labelMedium, color = DashGrey)
+        ChoiceRow(
+            listOf<FilmCharacter?>(null) + FilmCharacter.forFilm(film),
+            picked,
+            { it?.let { c -> "${c.shortName} · ${c.label}" } ?: "Edition's own (${edition.character.shortName})" },
+            { app.settings.filmChoices.set(FilmChoices.encode(FilmChoices.withCharacter(choices, film, it))) },
+            color = ScannerRed,
+            enabled = { characters }
+        )
         KittToggle(
             "Film character",
             characters,
             { app.settings.filmCharacters.set(it) },
-            description = (character?.let { "KITT becomes the ${it.label}: its own voice and way of talking. " } ?: "") +
+            description = "KITT becomes the ${character.label.lowercase()} (${character.shortName}): its own voice and way of talking. " +
                 "An original character in the spirit of the film, not an imitation of the actor. Your personality setting " +
                 "still decides how crude it is; the voice needs the Gemini voice engine (the device voice only changes pitch and pace)."
         )

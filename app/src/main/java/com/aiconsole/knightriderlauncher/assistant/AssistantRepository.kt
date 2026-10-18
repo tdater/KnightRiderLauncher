@@ -1,7 +1,6 @@
 package com.aiconsole.knightriderlauncher.assistant
 
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
-import com.aiconsole.knightriderlauncher.ui.theme.hud
 
 import android.database.SQLException
 import com.aiconsole.knightriderlauncher.data.settings.AiProvider
@@ -78,5 +77,5 @@ class AssistantRepository(
 
     /** The film theme's character, when one is on and the driver wants it. */
     private fun filmCharacter(): FilmCharacter? =
-        if (settings.filmCharacters.value) FilmCharacter.forStyle(ThemeState.theme.hud) else null
+        if (settings.filmCharacters.value) ThemeState.filmCharacter else null
 }

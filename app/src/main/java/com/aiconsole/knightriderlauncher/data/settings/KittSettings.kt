@@ -35,6 +35,8 @@ enum class PersonaStyle(val label: String) {
 
 enum class VoiceEngine(val label: String) {
     Gemini("Gemini neural"),
+    /** Neural voices that run on the head unit itself (sherpa-onnx): free, offline, no key. */
+    OnDevice("KITT neural (offline)"),
     Device("Device TTS")
 }
 
@@ -116,8 +118,11 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
     )
     /** Device TTS voice: the offline fallback, or the only voice when [voiceEngine] is Device. */
     val kittVoiceName = stringPref("kitt_voice", "")
+    /** On-device neural voice pack (LocalVoices id; "" = the default pack) and its speaker. */
+    val localVoice = stringPref("local_voice", "")
+    val localVoiceSpeaker = intPref("local_voice_speaker", 0)
     val voiceEngine = Pref(
-        "voice_engine", VoiceEngine.Gemini,
+        "voice_engine", VoiceEngine.OnDevice,
         { k, d -> runCatching { VoiceEngine.valueOf(getString(k, d.name)!!) }.getOrDefault(d) },
         { k, v -> putString(k, v.name) }
     )
@@ -216,8 +221,17 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
     val darkPages = boolPref("dark_pages", false)
     /** Block known ad and tracker hosts (default for sites without an override). */
     val blockAds = boolPref("block_ads", true)
-    /** Games page: map controller buttons to keyboard keys (off = native Gamepad API sites). */
+    /** Games page: map controller buttons to keyboard keys (off = native Gamepad API sites). Superseded by [gamepadMode]. */
     val gamepadKeyboard = boolPref("gamepad_keyboard", true)
+    /** Games page: how controller and touch-pad input reaches the page (ControllerMode name; "" = Auto). */
+    val gamepadMode = stringPref("gamepad_mode", "")
+    /** Games page: the on-screen touch pad is showing. */
+    val touchPad = boolPref("touch_pad", false)
+    /** Home pages: favourite sites (SiteHomeRules) and the latest page on each site ("Continue playing / watching"). */
+    val gameFavorites = stringPref("game_favorites", "")
+    val gameVisits = stringPref("game_visits", "")
+    val streamFavorites = stringPref("stream_favorites", "")
+    val streamVisits = stringPref("stream_visits", "")
     val navNotifications = boolPref("nav_notifications", true)
     val wakeWord = boolPref("wake_word", false)
 
@@ -244,6 +258,8 @@ class KittSettings(context: Context, private val scope: CoroutineScope) {
     val filmCharacters = boolPref("film_characters", true)
     /** Film themes play their boot sequence when they come on. */
     val filmIntros = boolPref("film_intros", true)
+    /** Each film theme's edition and character (FilmChoices format; "" = the originals). */
+    val filmChoices = stringPref("film_choices", "")
     /** Theme for night time ("" = keep the day theme), e.g. Stealth or Night Vision. */
     val nightTheme = stringPref("night_theme", "")
     /** The stream window keeps playing in a corner mini player when you leave the Drive page. */

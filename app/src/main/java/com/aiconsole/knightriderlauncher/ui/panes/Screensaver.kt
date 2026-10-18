@@ -26,7 +26,6 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashGrey
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudText
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
 import com.aiconsole.knightriderlauncher.ui.theme.ThemeState
-import com.aiconsole.knightriderlauncher.ui.theme.hud
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,7 +59,7 @@ fun Screensaver(onWake: () -> Unit, modifier: Modifier = Modifier) {
                 color = DashGrey
             )
             VoiceModulator(active = true, modifier = Modifier.fillMaxWidth(0.5f).height(90.dp))
-            ThemeState.theme.hud?.let { style ->
+            ThemeState.edition?.let { style ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(FilmHudText.brand(style), style = MaterialTheme.typography.labelLarge, color = ScannerRed)
                     FilmHudText.lines(style).forEach { Text(it, style = MaterialTheme.typography.labelMedium, color = DashGrey) }

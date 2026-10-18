@@ -64,7 +64,10 @@ class BrowserTab(val id: Long, initialUrl: String?, initialTitle: String?) {
 
     /** On screen right now (its WebView is attached in a page, not parked or hidden). */
     var attached = false
-        internal set
+        internal set(value) {
+            if (field != value) WebMedia.pageShown(value)
+            field = value
+        }
 
     /** When the tab was last shown, for discarding the least recently used hidden tabs. */
     var lastUsed = 0L
@@ -77,6 +80,9 @@ class BrowserTab(val id: Long, initialUrl: String?, initialTitle: String?) {
      */
     var gone by mutableStateOf(false)
         internal set
+
+    /** A pop-up's opener page, until its first page shows whether to keep it (see BrowserSession.holdPopups). */
+    internal var popupFrom: String? = null
 
     /** Last reload for a desktop/mobile switch, so a redirect chain can't ping-pong reloads. */
     internal var lastAgentReload = 0L
@@ -95,11 +101,94 @@ class BrowserSession(
     private val space: String,
     private val settings: KittSettings,
     private val userscripts: UserscriptStore,
-    /** Games: turn controller buttons and sticks into the keyboard keys web emulators use. */
+    /** Games: controllers and the touch pad reach pages as a standard gamepad and/or keyboard keys. */
     private val gamepad: Boolean = false,
     /** Lite mode (see DeviceProfile): lighter WebViews and fewer kept alive. */
-    private val lite: () -> Boolean = { false }
+    private val lite: () -> Boolean = { false },
+    /**
+     * Free game and video sites love pop-unders and automatic redirects: with ad blocking on, a
+     * pop-up or a redirect to another site that the driver didn't tap is held back (see
+     * [blockedPopup]) instead of opening.
+     */
+    private val holdPopups: Boolean = false,
+    /** A page finished loading in a tab: the home page's "Continue playing / watching" row. */
+    private val onVisit: ((title: String?, url: String) -> Unit)? = null
 ) {
+    /** A pop-up or redirect held back by [holdPopups]; the toolbar offers to open it. */
+    var blockedPopup by mutableStateOf<String?>(null)
+
+    /** What happened to the last download, for the toolbar. */
+    var downloadMessage by mutableStateOf<String?>(null)
+
+    /** Ads and trackers blocked on the current page, for the toolbar. */
+    var blockedCount by mutableIntStateOf(0)
+        private set
+
+    /** Game mode / theater: the launcher hides its rail, dock and status strip around this browser. */
+    var immersive by mutableStateOf(false)
+
+    /** Virtual gamepads every page of a [gamepad] session reads (see [VirtualPads]). */
+    val pads = VirtualPads()
+
+    /** How controller and touch-pad input reaches pages (Games page). */
+    var controllerMode by mutableStateOf(ControllerMode.parse(settings.gamepadMode.value))
+        private set
+
+    fun changeControllerMode(mode: ControllerMode) {
+        controllerMode = mode
+        settings.gamepadMode.set(mode.name)
+        pads.releaseAll()
+    }
+
+    /** Buttons that went down as keyboard keys in Auto mode, so their release goes the same way. */
+    private val autoKeys = mutableSetOf<Int>()
+
+    /**
+     * One button of the on-screen touch pad: a standard gamepad button and/or the mapped keyboard
+     * key, by [controllerMode], into the current page.
+     */
+    fun touchButton(keyCode: Int, down: Boolean) {
+        val web = current?.web ?: return
+        val mode = controllerMode
+        if (mode.feedsGamepad()) pads.onTouch(keyCode, down)
+        val keys = if (mode == ControllerMode.Auto) {
+            if (down) !pads.pagePolls else keyCode in autoKeys
+        } else mode.sendsKeys(pads.pagePolls)
+        if (mode == ControllerMode.Auto) if (down && keys) autoKeys += keyCode else autoKeys -= keyCode
+        if (!keys) return
+        val mapped = Gamepad.map(keyCode) ?: return
+        if (!web.hasFocus()) web.requestFocus()
+        val now = SystemClock.uptimeMillis()
+        val action = if (down) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
+        web.dispatchKeyEvent(KeyEvent(now, now, action, mapped, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD))
+    }
+
+    /** Focus game / video: the biggest game or video on the page fills the page (again to undo). */
+    fun focusMedia(onResult: (String) -> Unit = {}) = run(PageScripts.FOCUS_GAME, onResult)
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val blockedOnPage = java.util.concurrent.atomic.AtomicInteger()
+    private val showBlocked = Runnable { blockedCount = blockedOnPage.get() }
+
+    /** Counts a blocked ad request (any thread); the toolbar updates at most every quarter second. */
+    private fun countBlocked() {
+        blockedOnPage.incrementAndGet()
+        mainHandler.removeCallbacks(showBlocked)
+        mainHandler.postDelayed(showBlocked, 250)
+    }
+
+    private fun resetBlocked() {
+        blockedOnPage.set(0)
+        blockedCount = 0
+    }
+
+    /** Opens the held pop-up in a new tab. */
+    fun openBlockedPopup() {
+        val url = blockedPopup ?: return
+        blockedPopup = null
+        newTab(url, StreamUrls.titleOf(url))
+    }
+
     val tabs = mutableStateListOf<BrowserTab>()
     var currentIndex by mutableIntStateOf(0)
 
@@ -231,7 +320,8 @@ class BrowserSession(
     }
 
     fun isDesktop(tab: BrowserTab): Boolean =
-        !SiteSettings.forcesMobile(tab.host) && (siteConfig(tab)?.desktop ?: settings.streamDesktop.value)
+        !SiteSettings.forcesMobile(tab.host) &&
+            (siteConfig(tab)?.desktop ?: (!SiteSettings.prefersMobile(tab.host) && settings.streamDesktop.value))
     fun isDark(tab: BrowserTab): Boolean = siteConfig(tab)?.dark ?: settings.darkPages.value
     fun blocksAds(tab: BrowserTab): Boolean =
         SiteSettings.blockAllowed(tab.host) && (siteConfig(tab)?.blockAds ?: settings.blockAds.value)
@@ -285,6 +375,8 @@ class BrowserSession(
         tab.handlers.clear()
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         tab.handlers += WebViewCompat.addDocumentStartJavaScript(web, PageScripts.MEDIA_WATCH, setOf("*"))
+        // Gamepad API emulators see the controllers and the touch pad (every frame, before the page runs).
+        if (gamepad) tab.handlers += WebViewCompat.addDocumentStartJavaScript(web, VirtualPads.POLYFILL, setOf("*"))
         scripts.filter { it.enabled }.forEach { installed ->
             try {
                 tab.handlers += WebViewCompat.addDocumentStartJavaScript(web, Userscripts.wrap(installed.script), setOf("*"))
@@ -373,42 +465,61 @@ class BrowserSession(
         applySiteOptions(tab, this)
         webViewClient = TabClient(tab)
         webChromeClient = TabChrome(tab)
-        if (gamepad) installGamepad(this)
+        if (gamepad) {
+            installGamepad(this)
+            addJavascriptInterface(pads.Bridge(), "KittPad")
+        }
         addJavascriptInterface(WebMedia.bridgeFor(this, tab), "KittMedia")
-        setDownloadListener { url, _, _, mimetype, _ ->
-            if (StreamUrls.isUserscript(url) || mimetype == "text/x-userscript") pendingInstall = url
+        setDownloadListener { url, userAgent, disposition, mimetype, _ ->
+            when {
+                StreamUrls.isUserscript(url) || mimetype == "text/x-userscript" -> pendingInstall = url
+                // Emulator apps, homebrew ROMs, files: saved to Downloads/KITT; APKs offer to install.
+                else -> downloadMessage = BrowserDownloads.enqueue(context, url, userAgent, disposition, mimetype)
+            }
         }
     }
 
     /**
-     * Controller input arrives at the focused page as key events the page doesn't understand;
-     * remap them to the keyboard keys emulators listen for (unless the driver chose native
-     * gamepad mode for sites that use the Gamepad API).
+     * Controller input (from RetroTV): buttons feed the virtual standard gamepad pages read through
+     * [VirtualPads.POLYFILL], and/or become the keyboard keys keyboard-only emulators listen for,
+     * by [controllerMode]. Auto picks per button press: gamepad while the page is reading
+     * gamepads, keys otherwise.
      */
     private fun installGamepad(web: WebView) {
         val held = mutableSetOf<Int>()
-        fun fromController(source: Int) =
-            source and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD ||
-                source and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK ||
-                source and InputDevice.SOURCE_DPAD == InputDevice.SOURCE_DPAD
         fun send(action: Int, keyCode: Int) {
             val now = SystemClock.uptimeMillis()
             web.dispatchKeyEvent(KeyEvent(now, now, action, keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD))
         }
         web.setOnKeyListener { _, keyCode, event ->
-            if (!settings.gamepadKeyboard.value || !fromController(event.source)) return@setOnKeyListener false
-            val mapped = Gamepad.map(keyCode) ?: return@setOnKeyListener false
-            if (mapped == keyCode) return@setOnKeyListener false // D-pad already arrives as arrows.
-            send(event.action, mapped)
-            true
+            if (!VirtualPads.isController(event)) return@setOnKeyListener false
+            val mode = controllerMode
+            val down = event.action == KeyEvent.ACTION_DOWN
+            val padded = mode.feedsGamepad() && pads.onKey(event)
+            val keys = if (mode == ControllerMode.Auto) {
+                if (down) !pads.pagePolls else keyCode in autoKeys
+            } else mode.sendsKeys(pads.pagePolls)
+            if (mode == ControllerMode.Auto) if (down && keys) autoKeys += keyCode else autoKeys -= keyCode
+            val mapped = Gamepad.map(keyCode)
+            when {
+                // The D-pad already arrives as arrow keys: let it through when keys are wanted.
+                keys && mapped == keyCode -> false
+                keys && mapped != null -> {
+                    send(event.action, mapped)
+                    true
+                }
+                else -> padded
+            }
         }
         web.setOnGenericMotionListener { _, event ->
-            if (!settings.gamepadKeyboard.value || event.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) {
-                return@setOnGenericMotionListener false
-            }
-            val x = event.getAxisValue(MotionEvent.AXIS_X).takeIf { kotlin.math.abs(it) > 0.1f } ?: event.getAxisValue(MotionEvent.AXIS_HAT_X)
-            val y = event.getAxisValue(MotionEvent.AXIS_Y).takeIf { kotlin.math.abs(it) > 0.1f } ?: event.getAxisValue(MotionEvent.AXIS_HAT_Y)
-            val now = Gamepad.stickDirections(x, y)
+            if (!VirtualPads.isJoystick(event)) return@setOnGenericMotionListener false
+            val mode = controllerMode
+            if (mode.feedsGamepad()) pads.onMotion(event)
+            val now = if (mode.sendsKeys(pads.pagePolls)) {
+                val x = event.getAxisValue(MotionEvent.AXIS_X).takeIf { kotlin.math.abs(it) > 0.1f } ?: event.getAxisValue(MotionEvent.AXIS_HAT_X)
+                val y = event.getAxisValue(MotionEvent.AXIS_Y).takeIf { kotlin.math.abs(it) > 0.1f } ?: event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+                Gamepad.stickDirections(x, y)
+            } else emptySet()
             (held - now).forEach { send(KeyEvent.ACTION_UP, it) }
             (now - held).forEach { send(KeyEvent.ACTION_DOWN, it) }
             held.clear()
@@ -429,10 +540,42 @@ class BrowserSession(
                 return true
             }
             val scheme = request.url.scheme
-            return scheme != "http" && scheme != "https"
+            if (scheme != "http" && scheme != "https") return true
+            if (!request.isForMainFrame || !blocksAds(tab)) return false
+            // An ad redirect is dropped; a redirect to another site nobody tapped is held back.
+            if (AdBlock.isBlocked(request.url.host)) {
+                countBlocked()
+                return true
+            }
+            val from = view.url
+            if (holdPopups && !request.hasGesture() && !request.isRedirect && from != null && from.startsWith("http") &&
+                !SiteHomeRules.sameSite(from, target)
+            ) {
+                blockedPopup = target
+                return true
+            }
+            return false
+        }
+
+        override fun onPageCommitVisible(view: WebView, url: String?) {
+            if (blocksAds(tab)) view.evaluateJavascript(PageScripts.COSMETIC, null)
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            if (tab === current) resetBlocked()
+            val opener = tab.popupFrom
+            if (opener != null && url != null && url.startsWith("http")) {
+                // A pop-up the driver tapped: ads are dropped, other sites are held back
+                // (except sign-in windows, which need their opener).
+                tab.popupFrom = null
+                val ad = AdBlock.isBlocked(url.toUri().host)
+                if (ad || (!SiteHomeRules.sameSite(opener, url) && !SiteHomeRules.isSignIn(url))) {
+                    view.stopLoading()
+                    if (ad) countBlocked() else blockedPopup = url
+                    mainHandler.post { tabs.indexOf(tab).takeIf { it >= 0 }?.let(::closeTab) }
+                    return
+                }
+            }
             if (url != null && url.startsWith("http")) {
                 tab.url = url
                 // A sign-in redirect between a desktop site and a mobile-only one would otherwise
@@ -447,13 +590,26 @@ class BrowserSession(
 
         override fun onPageFinished(view: WebView, url: String?) {
             tab.title = view.title?.takeIf { it.isNotBlank() } ?: tab.title
+            if (blocksAds(tab)) view.evaluateJavascript(PageScripts.COSMETIC, null)
+            if (url != null && url.startsWith("http")) onVisit?.invoke(view.title, url)
             if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
             view.evaluateJavascript(PageScripts.MEDIA_WATCH, null)
+            if (gamepad) view.evaluateJavascript(VirtualPads.POLYFILL, null)
             userscripts.scripts.value.filter { it.enabled }.forEach { view.evaluateJavascript(Userscripts.wrap(it.script), null) }
         }
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (!blocksAds(tab) || !AdBlock.isBlocked(request.url.host)) return null
+            if (request.isForMainFrame || !blocksAds(tab) || !AdBlock.isBlocked(request.url.host)) return null
+            countBlocked()
+            // Scripts get a stand-in (or an empty script): game and video pages often wait on an
+            // ad library's callback before they start, and would hang on a missing script.
+            val path = request.url.path.orEmpty()
+            val surrogate = Surrogates.find(request.url.host.orEmpty(), path)
+            if (surrogate != null || Surrogates.looksLikeScript(path, request.requestHeaders["Accept"])) {
+                val body = (surrogate ?: Surrogates.EMPTY).toByteArray()
+                val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store")
+                return WebResourceResponse("application/javascript", "utf-8", 200, "OK", headers, ByteArrayInputStream(body))
+            }
             return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
         }
 
@@ -500,6 +656,8 @@ class BrowserSession(
             if (!isUserGesture) return false
             val newTab = newTab(null, "New tab")
             newTab.url = "about:blank"
+            // Checked on its first page (see TabClient.onPageStarted); sign-in pop-ups keep working.
+            if (holdPopups && blocksAds(tab)) newTab.popupFrom = view.url
             val web = createWebView(view.context, newTab)
             newTab.web = web
             applyScripts(newTab, userscripts.scripts.value)

@@ -18,106 +18,32 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import com.aiconsole.knightriderlauncher.browser.WebMedia
 import kotlin.random.Random
 
-/** Text the film HUD themes show in the status strip, panels, screensaver and intros. */
+/** Text the film HUD themes show in the status strip, panels, screensaver and intros (see [FilmEdition]). */
 object FilmHudText {
 
-    /** Readouts in the style of the T-800's vision overlays. */
-    val TERMINATOR = listOf(
-        "SCAN MODE 43984",
-        "ANALYSIS: COMPLETE",
-        "THREAT ASSESSMENT: NONE",
-        "SYSTEMS: NOMINAL",
-        "MATCH: VEHICLE PROFILE",
-        "PRIORITY: MISSION"
-    )
+    fun lines(edition: FilmEdition): List<String> = edition.lines
 
-    /** RoboCop's published prime directives; the fourth stays classified, as in the film. */
-    val ROBOCOP = listOf(
-        "DIRECTIVE 1: SERVE THE PUBLIC TRUST",
-        "DIRECTIVE 2: PROTECT THE INNOCENT",
-        "DIRECTIVE 3: UPHOLD THE LAW",
-        "DIRECTIVE 4: [CLASSIFIED]"
-    )
-
-    /** Short terminal lines in the style of the film's opening messages. */
-    val MATRIX = listOf(
-        "WAKE UP, NEO...",
-        "THE MATRIX HAS YOU...",
-        "FOLLOW THE WHITE RABBIT.",
-        "KNOCK, KNOCK."
-    )
-
-    /** The DeLorean's dash, in the film's own terms. */
-    val FUTURE = listOf(
-        "TIME CIRCUITS: ON",
-        "FLUX CAPACITOR: FLUXING",
-        "1.21 GIGAWATTS: STANDBY",
-        "TEMPORAL DISPLACEMENT: READY"
-    )
-
-    fun lines(style: HudStyle): List<String> = when (style) {
-        HudStyle.Terminator -> TERMINATOR
-        HudStyle.RoboCop -> ROBOCOP
-        HudStyle.Matrix -> MATRIX
-        HudStyle.Future -> FUTURE
-    }
+    /** The film's original edition's readouts. */
+    fun lines(style: HudStyle): List<String> = lines(FilmEdition.default(style))
 
     /** Brand line for the status strip. */
-    fun brand(style: HudStyle): String = when (style) {
-        HudStyle.Terminator -> "CYBERDYNE 101"
-        HudStyle.RoboCop -> "OCP · METRO WEST"
-        HudStyle.Matrix -> "NEBUCHADNEZZAR · OPERATOR"
-        HudStyle.Future -> "DMC-12 · TIME CIRCUITS"
-    }
+    fun brand(edition: FilmEdition): String = edition.brand
 
-    /** What the alert banner calls KITT's messages in each film. */
-    fun alertTitle(style: HudStyle?): String? = when (style) {
-        HudStyle.Terminator -> "▌PRIORITY TRANSMISSION"
-        HudStyle.RoboCop -> "[ OCP ADVISORY ]"
-        HudStyle.Matrix -> "> INCOMING_"
-        HudStyle.Future -> "⚡ TIME CIRCUITS"
-        null -> null
-    }
+    /** What the alert banner calls KITT's messages. */
+    fun alertTitle(edition: FilmEdition?): String? = edition?.alertTitle
 
-    /**
-     * The boot sequence each film theme shows when it comes on: original lines in the style of
-     * each film's machines, not dialogue from them.
-     */
-    fun intro(style: HudStyle): List<String> = when (style) {
-        HudStyle.Terminator -> listOf(
-            "CYBERDYNE SYSTEMS MODEL 101",
-            "NEURAL NET PROCESSOR: ONLINE",
-            "VISION OVERLAY: ACTIVE",
-            "SCANNING VEHICLE ............ OK",
-            "PRIMARY OBJECTIVE: DRIVE"
-        )
-        HudStyle.RoboCop -> listOf(
-            "OCP CRIME PREVENTION SYSTEM",
-            "VISOR CALIBRATION ........... OK",
-            "TARGETING ................... OK",
-            "DIRECTIVES LOADED: 4",
-            "STATUS: ON PATROL"
-        )
-        HudStyle.Matrix -> listOf(
-            "Wake up...",
-            "The vehicle has you...",
-            "Follow the white rabbit.",
-            "Knock, knock."
-        )
-        HudStyle.Future -> listOf(
-            "TIME CIRCUITS ON",
-            "FLUX CAPACITOR ........ FLUXING",
-            "DESTINATION TIME SET",
-            "1.21 GIGAWATTS ......... READY",
-            "WHERE WE'RE DRIVING, WE STILL NEED ROADS"
-        )
-    }
+    /** The boot sequence each edition shows when it comes on: original lines, not dialogue. */
+    fun intro(edition: FilmEdition): List<String> = edition.intro
+
+    fun intro(style: HudStyle): List<String> = intro(FilmEdition.default(style))
 
     /** Machine-looking tag for a panel title, e.g. "0x5E2A": stable per title. */
     fun hexTag(title: String): String = "0x%04X".format(title.uppercase().hashCode() and 0xFFFF)
@@ -137,23 +63,38 @@ object FilmHudText {
     }
 }
 
+/** Which editions' overlays move, and how often they redraw (nanoseconds per frame). */
+private fun overlayStep(edition: FilmEdition): Long? = when (edition) {
+    FilmEdition.T800 -> 80_000_000L // ~12 fps for the code column.
+    FilmEdition.Visor -> 33_000_000L // ~30 fps for the visor sweep.
+    FilmEdition.T1000, FilmEdition.FutureWar -> 50_000_000L // Slow sheen and searchlight: 20 fps reads as smooth.
+    else -> null
+}
+
 /**
- * Full-screen HUD layer drawn over the launcher (never intercepts touches): CRT scanlines, plus a
- * red vision vignette with scrolling machine code (Terminator), a cold visor glow with a sweeping
- * scan bar (RoboCop), green CRT bloom (The Matrix), or a stainless-steel edge sheen (Back to
- * the Future). The moving parts stand still in lite mode.
+ * Full-screen HUD layer drawn over the launcher (never intercepts touches), per edition:
+ * - Terminator: red vision with scrolling machine code (T-800); a liquid-chrome sheen flowing
+ *   across a steel vignette (Liquid Metal); a hunter-killer searchlight over night-battle blue
+ *   (Future War);
+ * - RoboCop: visor glow with a sweeping scan band (Visor); a hazard-stripe band and red sensor
+ *   glow (ED-209); executive gold light top and bottom (Delta City);
+ * - The Matrix: green CRT bloom (Digital Rain), the hovercraft's cold blue monitors (Real World),
+ *   Zion's amber firelight;
+ * - Back to the Future: brushed-steel edges (1985), neon magenta and cyan (2015), sepia (1885).
+ * Moving parts stand still in lite mode and while a web page is on screen.
  */
 @Composable
-fun FilmHudOverlay(style: HudStyle, modifier: Modifier = Modifier) {
-    val animate = !LocalLiteMode.current && (style == HudStyle.Terminator || style == HudStyle.RoboCop)
+fun FilmHudOverlay(edition: FilmEdition, modifier: Modifier = Modifier) {
+    val step = overlayStep(edition)
+    // Still over a web page too: this layer covers the whole screen, so every frame of it made
+    // the page underneath composite again.
+    val animate = step != null && !LocalLiteMode.current && WebMedia.pagesOnScreen == 0
     var now by remember { mutableLongStateOf(0L) }
     if (animate) {
-        LaunchedEffect(style) {
+        LaunchedEffect(edition) {
             var last = 0L
-            // ~12 fps for the code column, ~30 fps for the visor sweep: enough to read as motion.
-            val step = if (style == HudStyle.Terminator) 80_000_000L else 33_000_000L
             while (true) withFrameNanos {
-                if (it - last >= step) {
+                if (it - last >= step!!) {
                     last = it
                     now = it
                 }
@@ -162,36 +103,107 @@ fun FilmHudOverlay(style: HudStyle, modifier: Modifier = Modifier) {
     }
     val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE } }
     Canvas(modifier) {
-        if (style != HudStyle.Future) {
-            val pitch = 3.dp.toPx()
-            var y = 0f
-            val line = Color.Black.copy(alpha = if (style == HudStyle.Terminator) 0.22f else 0.16f)
-            while (y < size.height) {
-                drawLine(line, Offset(0f, y), Offset(size.width, y), 1f)
-                y += pitch
-            }
-        }
-        when (style) {
-            HudStyle.Matrix -> drawRect(
-                // Green phosphor bloom at the edges of an old monochrome CRT.
-                Brush.radialGradient(listOf(Color.Transparent, Color(0x3300FF41)), center = center, radius = size.maxDimension * 0.8f)
-            )
-            HudStyle.Terminator -> {
-                drawRect(Brush.radialGradient(listOf(Color.Transparent, Color(0x55FF1A0A)), center = center, radius = size.maxDimension * 0.75f))
+        if (edition.film != HudStyle.Future && edition != FilmEdition.Zion) scanlines(if (edition.film == HudStyle.Terminator) 0.22f else 0.16f)
+        fun vignette(color: Color, reach: Float = 0.75f) =
+            drawRect(Brush.radialGradient(listOf(Color.Transparent, color), center = center, radius = size.maxDimension * reach))
+        when (edition) {
+            FilmEdition.T800 -> {
+                vignette(Color(0x55FF1A0A))
                 machineCode(paint, now)
             }
-            HudStyle.RoboCop -> {
-                val glow = Color(0x3366CCFF)
-                drawRect(Brush.verticalGradient(listOf(glow, Color.Transparent), startY = 0f, endY = size.height * 0.12f))
-                drawRect(Brush.verticalGradient(listOf(Color.Transparent, glow), startY = size.height * 0.88f, endY = size.height))
+            FilmEdition.T1000 -> {
+                vignette(Color(0x40A8C0D8), 0.8f)
+                chromeSheen(now)
+            }
+            FilmEdition.FutureWar -> {
+                vignette(Color(0x55101E66))
+                searchlight(now)
+            }
+            FilmEdition.Visor -> {
+                edgeGlow(Color(0x3366CCFF))
                 visorSweep(now)
             }
-            HudStyle.Future -> {
-                // Brushed-steel sheen along the edges, like the DeLorean's panels.
-                val steel = Color(0x22C8D0D8)
-                drawRect(Brush.horizontalGradient(listOf(steel, Color.Transparent), startX = 0f, endX = size.width * 0.06f))
-                drawRect(Brush.horizontalGradient(listOf(Color.Transparent, steel), startX = size.width * 0.94f, endX = size.width))
+            FilmEdition.Ed209 -> {
+                vignette(Color(0x33FF2A1A), 0.85f)
+                hazardBand()
             }
+            FilmEdition.DeltaCity -> edgeGlow(Color(0x30E8C45A))
+            // Green phosphor bloom at the edges of an old monochrome CRT.
+            FilmEdition.Code -> vignette(Color(0x3300FF41), 0.8f)
+            FilmEdition.RealWorld -> vignette(Color(0x2E5FD4FF), 0.8f)
+            FilmEdition.Zion -> vignette(Color(0x40FF8A1E), 0.7f)
+            FilmEdition.Delorean1985 -> {
+                // Brushed-steel sheen along the edges, like the DeLorean's panels.
+                sideGlow(Color(0x22C8D0D8), Color(0x22C8D0D8))
+            }
+            FilmEdition.HillValley2015 -> sideGlow(Color(0x2EFF3DB8), Color(0x2E3DF0FF))
+            FilmEdition.Frontier1885 -> vignette(Color(0x66402810), 0.7f)
+        }
+    }
+}
+
+private fun DrawScope.scanlines(alpha: Float) {
+    val pitch = 3.dp.toPx()
+    var y = 0f
+    val line = Color.Black.copy(alpha = alpha)
+    while (y < size.height) {
+        drawLine(line, Offset(0f, y), Offset(size.width, y), 1f)
+        y += pitch
+    }
+}
+
+/** Light along the top and bottom edges (a visor's rim, a boardroom's downlights). */
+private fun DrawScope.edgeGlow(glow: Color) {
+    drawRect(Brush.verticalGradient(listOf(glow, Color.Transparent), startY = 0f, endY = size.height * 0.12f))
+    drawRect(Brush.verticalGradient(listOf(Color.Transparent, glow), startY = size.height * 0.88f, endY = size.height))
+}
+
+private fun DrawScope.sideGlow(left: Color, right: Color) {
+    drawRect(Brush.horizontalGradient(listOf(left, Color.Transparent), startX = 0f, endX = size.width * 0.06f))
+    drawRect(Brush.horizontalGradient(listOf(Color.Transparent, right), startX = size.width * 0.94f, endX = size.width))
+}
+
+/** Liquid metal: a soft diagonal band of chrome light flows across the screen now and then. */
+private fun DrawScope.chromeSheen(now: Long) {
+    if (now == 0L) return
+    val period = 9_000_000_000L
+    val flow = 2_200_000_000L
+    val t = now % period
+    if (t > flow) return
+    val p = t.toFloat() / flow
+    val x = -size.width * 0.3f + size.width * 1.6f * p
+    val band = size.width * 0.22f
+    drawRect(
+        Brush.linearGradient(
+            listOf(Color.Transparent, Color(0x22DCE8F2), Color(0x44FFFFFF), Color(0x22DCE8F2), Color.Transparent),
+            start = Offset(x - band, 0f),
+            end = Offset(x + band, size.height * 0.6f)
+        )
+    )
+}
+
+/** Future war: a hunter-killer's searchlight drifts across the top of the screen. */
+private fun DrawScope.searchlight(now: Long) {
+    if (now == 0L) return
+    val period = 14_000_000_000L
+    val phase = (now % period).toDouble() / period
+    val x = size.width * (0.5f + 0.42f * kotlin.math.sin(2 * Math.PI * phase).toFloat())
+    val y = size.height * (0.22f + 0.08f * kotlin.math.cos(4 * Math.PI * phase).toFloat())
+    val r = size.minDimension * 0.42f
+    drawCircle(Brush.radialGradient(listOf(Color(0x2AC8D4FF), Color(0x10C8D4FF), Color.Transparent), center = Offset(x, y), radius = r), r, Offset(x, y))
+}
+
+/** ED-209: a thin yellow-and-black hazard band along the bottom edge. */
+private fun DrawScope.hazardBand() {
+    val h = 4.dp.toPx()
+    val top = size.height - h
+    val stripe = 10.dp.toPx()
+    drawRect(Color(0x99000000), Offset(0f, top), Size(size.width, h))
+    clipRect(0f, top, size.width, size.height) {
+        var x = -h
+        while (x < size.width + h) {
+            drawLine(Color(0x99FFC400), Offset(x, size.height), Offset(x + h, top), stripe / 2)
+            x += stripe
         }
     }
 }

@@ -73,8 +73,16 @@ object DeviceProfile {
      */
     fun liveWebViews(lite: Boolean): Int = if (lite) 2 else 5
 
-    /** Minimum time between scanner frames: ~30 fps in lite mode, the display's rate otherwise. */
-    fun scannerFrameNanos(lite: Boolean): Long = if (lite) 33_000_000L else 0L
+    /**
+     * Minimum time between scanner frames: ~30 fps in lite mode, the display's rate otherwise,
+     * and ~20 fps while a web page is on screen: each launcher frame makes the WebView composite
+     * again, which took GPU and CPU time from the page (YouTube Music) on head units.
+     */
+    fun scannerFrameNanos(lite: Boolean, webPageShown: Boolean = false): Long = when {
+        webPageShown -> 50_000_000L
+        lite -> 33_000_000L
+        else -> 0L
+    }
 
     /**
      * Which tabs to discard: hidden, silent tabs with a WebView, oldest-used first, beyond

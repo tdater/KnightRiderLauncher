@@ -315,7 +315,17 @@ object ThemeState {
     /** Driver-picked accent overriding the theme's, or null. */
     var accentOverride by mutableStateOf<Color?>(null)
 
-    val palette: KittPalette get() = theme.palette().withAccent(accentOverride)
+    /** Each film's chosen edition and character (see [FilmChoices]); set from settings. */
+    var filmChoices by mutableStateOf<Map<HudStyle, FilmChoice>>(emptyMap())
+
+    /** The active film theme's edition, or null for the non-film themes. */
+    val edition: FilmEdition? get() = theme.hud?.let { FilmChoices.edition(filmChoices, it) }
+
+    /** Who KITT becomes in the active film theme (whether that's switched on is a setting). */
+    val filmCharacter: com.aiconsole.knightriderlauncher.assistant.FilmCharacter?
+        get() = theme.hud?.let { FilmChoices.character(filmChoices, it) }
+
+    val palette: KittPalette get() = (edition?.palette ?: theme.palette()).withAccent(accentOverride)
 }
 
 // Surfaces

@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import com.aiconsole.knightriderlauncher.browser.WebMedia
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
@@ -28,7 +29,11 @@ import kotlin.random.Random
 fun MatrixRain(modifier: Modifier = Modifier) {
     val rain = remember { RainField() }
     var tick by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(rain) {
+    // Frozen while a web page is on screen: a full-screen layer redrawing under it made the page
+    // composite every frame too.
+    val paused = WebMedia.pagesOnScreen > 0
+    LaunchedEffect(rain, paused) {
+        if (paused) return@LaunchedEffect
         var last = 0L
         while (true) {
             withFrameNanos { now ->

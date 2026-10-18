@@ -217,8 +217,13 @@ class ObdManager(
     fun connect(configs: List<AdapterConfig>) {
         if (configs.isEmpty()) return
         demoReport = null
-        session?.cancel()
-        session = scope.launch(Dispatchers.IO) { runWithReconnect(configs) }
+        val previous = session
+        previous?.cancel()
+        session = scope.launch(Dispatchers.IO) {
+            // Let the old session hang up first: two links dialling one adapter both fail.
+            previous?.join()
+            runWithReconnect(configs)
+        }
     }
 
     fun disconnect() {
@@ -457,9 +462,14 @@ class ObdManager(
         }
     }
 
-    private suspend fun runSession(config: AdapterConfig) {
+    private suspend fun runSession(saved: AdapterConfig) {
+        val type = AdapterDiscovery.transportFor(context, saved)
+        val config = saved.copy(type = type)
         _state.value = ObdState.Connecting("Opening ${config.type.label} link to ${config.name}")
         stageLayer = LinkLayer.Transport
+        if (type != saved.type) {
+            logEvent(LinkLayer.Transport, "${config.name} was saved as ${saved.type.label}, but Android knows it as ${type.label}: using ${type.label}")
+        }
         logEvent(LinkLayer.Transport, "Opening ${config.type.label} link to ${config.name}")
         val transport = createTransport(context, config)
         try {

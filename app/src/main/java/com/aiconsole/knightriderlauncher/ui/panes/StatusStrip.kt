@@ -21,7 +21,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,7 +40,9 @@ import com.aiconsole.knightriderlauncher.obd.PidCatalog
 import com.aiconsole.knightriderlauncher.ui.theme.DashAmber
 import com.aiconsole.knightriderlauncher.ui.theme.DashGrey
 import com.aiconsole.knightriderlauncher.ui.theme.DashWhite
+import com.aiconsole.knightriderlauncher.ui.theme.DashYellow
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudText
+import com.aiconsole.knightriderlauncher.ui.theme.FilmMoments
 import com.aiconsole.knightriderlauncher.ui.theme.KittBlack
 import com.aiconsole.knightriderlauncher.ui.theme.LedGreen
 import com.aiconsole.knightriderlauncher.ui.theme.ScannerRed
@@ -68,6 +74,20 @@ fun StatusStrip(modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
             delay(5_000)
         }
     }
+    // Back to the Future: climbing through 88 km/h lights the strip up for a few seconds.
+    val speedKmh = readings[PidCatalog.SPEED]?.value
+    var lastKmh by remember { mutableStateOf<Double?>(null) }
+    var displaced by remember { mutableStateOf(false) }
+    LaunchedEffect(speedKmh) {
+        if (ThemeState.theme.hud == HudStyle.Future && FilmMoments.reached88(lastKmh, speedKmh)) displaced = true
+        lastKmh = speedKmh
+    }
+    LaunchedEffect(displaced) {
+        if (displaced) {
+            delay(4_000)
+            displaced = false
+        }
+    }
     val radios by produceState(Radios(false, false, false)) {
         while (true) {
             value = radios(context, app.gps.gpsEnabled())
@@ -87,11 +107,12 @@ fun StatusStrip(modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
             val departed by app.driveAssistant.departedAt.collectAsState()
             val arrival = route.remainingS?.takeIf { route.status == com.aiconsole.knightriderlauncher.nav.NavStatus.Navigating }?.let { now + (it * 1000).toLong() }
             TimeCircuitsStrip(arrival, now, departed, Modifier.fillMaxHeight().padding(vertical = 2.dp))
+            if (displaced) Text("⚡ 88 KM/H · TEMPORAL DISPLACEMENT", style = MaterialTheme.typography.labelSmall, color = DashYellow, maxLines = 1)
         } else Text(DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(now)), style = MaterialTheme.typography.labelLarge, color = DashWhite)
-        ThemeState.theme.hud?.takeIf { it != HudStyle.Future }?.let { style ->
-            val lines = FilmHudText.lines(style)
+        ThemeState.edition?.takeIf { it.film != HudStyle.Future }?.let { edition ->
+            val lines = FilmHudText.lines(edition)
             Text(
-                "${FilmHudText.brand(style)} · ${lines[((now / 8_000) % lines.size).toInt()]}",
+                "${FilmHudText.brand(edition)} · ${lines[((now / 8_000) % lines.size).toInt()]}",
                 style = MaterialTheme.typography.labelSmall,
                 color = ScannerRed,
                 maxLines = 1

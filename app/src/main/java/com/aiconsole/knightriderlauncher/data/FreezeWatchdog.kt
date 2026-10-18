@@ -31,7 +31,10 @@ object FreezeWatchdog {
     /** What was on screen (set by the UI, e.g. open web pages), included in a freeze report. */
     @Volatile var context: String = ""
 
-    private var started = false
+    @Volatile private var started = false
+
+    /** How long the main thread has gone without a heartbeat (about 0–1 s when it's fine). */
+    fun mainStalledMs(): Long = if (started) SystemClock.uptimeMillis() - lastBeat else 0L
 
     fun start(appContext: Context) {
         if (started) return

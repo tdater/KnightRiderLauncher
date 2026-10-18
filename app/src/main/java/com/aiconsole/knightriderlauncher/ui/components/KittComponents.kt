@@ -52,6 +52,7 @@ import com.aiconsole.knightriderlauncher.ui.theme.DashAmber
 import com.aiconsole.knightriderlauncher.ui.theme.DashAmberDim
 import com.aiconsole.knightriderlauncher.ui.theme.DashGrey
 import com.aiconsole.knightriderlauncher.ui.theme.DashYellow
+import com.aiconsole.knightriderlauncher.ui.theme.FilmEdition
 import com.aiconsole.knightriderlauncher.ui.theme.FilmHudText
 import com.aiconsole.knightriderlauncher.ui.theme.HudStyle
 import com.aiconsole.knightriderlauncher.ui.theme.KittBezel
@@ -151,6 +152,7 @@ fun KittPanel(
     val shape = MaterialTheme.shapes.medium
     val console = ThemeState.theme == UiTheme.Colorado
     val hud = ThemeState.theme.hud
+    val edition = ThemeState.edition
     Column(
         modifier
             .hudFrame(hud, accent)
@@ -194,7 +196,13 @@ fun KittPanel(
                 // readouts: "▌NAVIGATION" with a machine tag, or "[ NAVIGATION ]" in the visor style.
                 text = when {
                     console -> "> ${title.uppercase()}_"
+                    // Editions mark their panels their own way: liquid metal's diamond, the future
+                    // war's warning sign, ED-209's hazard tag, OCP's corporate chevrons.
+                    edition == FilmEdition.T1000 -> "◆ ${title.uppercase()}"
+                    edition == FilmEdition.FutureWar -> "⚠ ${title.uppercase()}"
                     hud == HudStyle.Terminator -> "▌${title.uppercase()}"
+                    edition == FilmEdition.Ed209 -> "[!] ${title.uppercase()}"
+                    edition == FilmEdition.DeltaCity -> "‹ ${title.uppercase()} ›"
                     hud == HudStyle.RoboCop -> "[ ${title.uppercase()} ]"
                     else -> title.uppercase()
                 },

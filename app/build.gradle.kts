@@ -1,3 +1,4 @@
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -70,9 +71,35 @@ android {
         compose = true
         buildConfig = true
     }
+    packaging {
+        jniLibs {
+            // The on-device voice engine's native code: head units are ARM, so the x86 builds
+            // only add size. Compressed in the APK (smaller self-updates), unpacked on install.
+            excludes += listOf("lib/x86/**", "lib/x86_64/**")
+            useLegacyPackaging = true
+        }
+    }
+}
+
+// On-device neural voice (sherpa-onnx, Apache-2.0): the official Android library from the
+// project's GitHub release, fetched once into app/libs (not committed) and checked by SHA-256.
+val sherpaVersion = "1.13.8"
+val sherpaSha256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
+val sherpaAar = file("libs/sherpa-onnx-$sherpaVersion.aar")
+fun sha256(f: File): String = MessageDigest.getInstance("SHA-256")
+    .digest(f.readBytes()).joinToString("") { "%02x".format(it) }
+if (!sherpaAar.exists() || sha256(sherpaAar) != sherpaSha256) {
+    sherpaAar.parentFile.mkdirs()
+    val part = File(sherpaAar.path + ".part")
+    uri("https://github.com/k2-fsa/sherpa-onnx/releases/download/v$sherpaVersion/sherpa-onnx-$sherpaVersion.aar")
+        .toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+    check(sha256(part) == sherpaSha256) { "sherpa-onnx $sherpaVersion download doesn't match its checksum" }
+    part.renameTo(sherpaAar)
 }
 
 dependencies {
+    implementation(files(sherpaAar))
+    implementation(libs.commons.compress)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

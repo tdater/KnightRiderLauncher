@@ -13,6 +13,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aiconsole.knightriderlauncher.browser.WebMedia
 import com.aiconsole.knightriderlauncher.data.settings.KittSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -105,7 +106,8 @@ class WakeWordListener(
         update()
     }
 
-    private fun mediaPlaying(): Boolean = audio?.isMusicActive == true
+    // A browser page counts while it's paused for a moment too (see WebMedia.busy).
+    private fun mediaPlaying(): Boolean = audio?.isMusicActive == true || WebMedia.busy
 
     private fun shouldListen(): Boolean = WakeWordRules.shouldListen(
         enabled = enabled,
