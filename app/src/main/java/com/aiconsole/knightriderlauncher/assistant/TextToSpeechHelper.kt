@@ -174,13 +174,18 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
         if (spoken < chunks.size) sayLocal(chunks.drop(spoken))
     }
 
-    private fun useNeural(): Boolean =
-        settings.voiceEngine.value == VoiceEngine.Gemini && settings.geminiKey.isNotEmpty()
+    // On-device is now the default: a driver with a Gemini key keeps Gemini until a voice is downloaded.
+    private fun useNeural(): Boolean = settings.geminiKey.isNotEmpty() && when (settings.voiceEngine.value) {
+        VoiceEngine.Gemini -> true
+        VoiceEngine.OnDevice -> !onDeviceReady()
+        VoiceEngine.Device -> false
+    }
 
     /** The free offline voice: chosen, or standing in for Gemini; only once a voice is downloaded. */
-    private fun useOnDevice(): Boolean =
-        settings.voiceEngine.value != VoiceEngine.Device && onDevice.unavailable == null &&
-            onDevice.isInstalled(LocalVoices.byId(settings.localVoice.value))
+    private fun useOnDevice(): Boolean = settings.voiceEngine.value != VoiceEngine.Device && onDeviceReady()
+
+    private fun onDeviceReady(): Boolean =
+        onDevice.unavailable == null && onDevice.isInstalled(LocalVoices.byId(settings.localVoice.value))
 
     /** Plays chunks through the on-device voice, synthesizing the next while one plays. Returns how many were spoken. */
     private suspend fun sayOnDevice(chunks: List<String>, urgent: Boolean): Int = supervisorScope {
@@ -190,12 +195,18 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
         val speed = (film?.rate ?: 1f) * (if (urgent) 1.06f else 1f)
         // The characters' pitches are tuned for the device voice; a neural voice needs less.
         val pitch = film?.let { 1f + (it.pitch - 1f) * 0.7f } ?: 1f
+        // Urgent lines (overheating, a new code) mustn't wait on a slow model load: device voice after 3 s.
+        val timeout = if (urgent) URGENT_TIMEOUT_MS else ON_DEVICE_TIMEOUT_MS
         fun fetch(index: Int) = async(Dispatchers.IO) { onDevice.synthesize(voice, chunks[index], speaker, speed) }
 
         var next = fetch(0)
         for (index in chunks.indices) {
             val clip = try {
-                next.await()
+                withTimeout(timeout) { next.await() }
+            } catch (e: TimeoutCancellationException) {
+                next.cancel()
+                Log.w(TAG, "On-device voice timed out; using device voice")
+                null
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -204,7 +215,16 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
             } ?: return@supervisorScope index
             if (index + 1 < chunks.size) next = fetch(index + 1)
             _speaking.value = true
-            onDevice.play(clip, ducker.attributes, pitch)
+            try {
+                onDevice.play(clip, ducker.attributes, pitch)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A unit whose audio stack refuses float PCM must not crash the launcher.
+                Log.w(TAG, "On-device playback failed; using device voice", e)
+                next.cancel()
+                return@supervisorScope index
+            }
         }
         chunks.size
     }
@@ -304,6 +324,8 @@ class TextToSpeechHelper(context: Context, private val settings: KittSettings, s
         const val TAG = "KittVoice"
         const val CHUNK_TIMEOUT_MS = 10_000L
         const val URGENT_TIMEOUT_MS = 3_000L
+        // The first line after start-up also loads the model, slow for Kokoro on weak units.
+        const val ON_DEVICE_TIMEOUT_MS = 20_000L
         const val LOCAL_INIT_TIMEOUT_MS = 5_000L
     }
 }

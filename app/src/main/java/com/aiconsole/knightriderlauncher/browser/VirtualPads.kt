@@ -36,6 +36,17 @@ class VirtualPads {
 
     private fun pad(id: Int, name: String): Pad? = synchronized(lock) {
         slots[id]?.let { return pads[it] }
+        // A controller gets a new id each time it reconnects: free the slots of ones that are gone,
+        // so it gets its slot back instead of leaving a dead pad 0 behind.
+        val live = InputDevice.getDeviceIds().toSet()
+        slots.entries.removeAll { (device, slot) ->
+            (device != TOUCH_ID && device !in live).also { gone ->
+                if (gone) {
+                    pads[slot] = null
+                    hat.remove(device)
+                }
+            }
+        }
         val slot = (0 until 4).firstOrNull { s -> pads[s] == null } ?: return null
         slots[id] = slot
         Pad(name).also { pads[slot] = it }
@@ -46,9 +57,12 @@ class VirtualPads {
         val i = Gamepad.standardIndex(event.keyCode)
         if (i < 0) return false
         val device = event.device ?: return false
-        val p = pad(device.id, device.name ?: "Controller") ?: return false
+        val down = event.action == KeyEvent.ACTION_DOWN
+        // A release only clears a pad that exists; it never takes a slot.
+        val p = (if (down) pad(device.id, device.name ?: "Controller") else synchronized(lock) { slots[device.id]?.let { pads[it] } })
+            ?: return false
         synchronized(lock) {
-            p.buttons[i] = if (event.action == KeyEvent.ACTION_DOWN) 1f else 0f
+            p.buttons[i] = if (down) 1f else 0f
             p.timestamp = System.nanoTime()
         }
         return true

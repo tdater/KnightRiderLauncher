@@ -16,6 +16,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
+import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -86,6 +87,9 @@ class BrowserTab(val id: Long, initialUrl: String?, initialTitle: String?) {
 
     /** Last reload for a desktop/mobile switch, so a redirect chain can't ping-pong reloads. */
     internal var lastAgentReload = 0L
+
+    /** When the driver last touched the page or pressed a controller button (uptime ms). */
+    internal var lastInputAt = 0L
     internal val handlers = mutableListOf<ScriptHandler>()
 
     val host: String? get() = url?.let { runCatching { it.toUri().host }.getOrNull() }
@@ -117,8 +121,24 @@ class BrowserSession(
     /** A pop-up or redirect held back by [holdPopups]; the toolbar offers to open it. */
     var blockedPopup by mutableStateOf<String?>(null)
 
+    /** A file a page offered; the bar asks before anything is saved. */
+    var pendingDownload by mutableStateOf<PendingDownload?>(null)
+
     /** What happened to the last download, for the toolbar. */
     var downloadMessage by mutableStateOf<String?>(null)
+
+    /** The driver tapped SAVE on [pendingDownload]. */
+    fun saveDownload(context: Context) {
+        val download = pendingDownload ?: return
+        pendingDownload = null
+        downloadMessage = BrowserDownloads.enqueue(context, download)
+    }
+
+    private fun cookiesFor(web: WebView, url: String): String? = runCatching {
+        val manager = if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) WebViewCompat.getProfile(web).cookieManager
+        else CookieManager.getInstance()
+        manager.getCookie(url)
+    }.getOrNull()
 
     /** Ads and trackers blocked on the current page, for the toolbar. */
     var blockedCount by mutableIntStateOf(0)
@@ -140,8 +160,20 @@ class BrowserSession(
         pads.releaseAll()
     }
 
-    /** Buttons that went down as keyboard keys in Auto mode, so their release goes the same way. */
-    private val autoKeys = mutableSetOf<Int>()
+    /**
+     * Buttons that went down as keyboard keys (touch pad, controllers), so their release goes the
+     * same way even if the mode changes or the page starts reading pads mid-press.
+     */
+    private val touchKeys = mutableSetOf<Int>()
+    private val padKeys = mutableSetOf<Int>()
+
+    /** Whether a press goes in as keys (by mode) or a release does (it went down that way). */
+    private fun keysFor(keyCode: Int, down: Boolean, sent: MutableSet<Int>): Boolean {
+        if (!down) return sent.remove(keyCode)
+        val keys = controllerMode.sendsKeys(pads.pagePolls)
+        if (keys) sent += keyCode
+        return keys
+    }
 
     /**
      * One button of the on-screen touch pad: a standard gamepad button and/or the mapped keyboard
@@ -149,13 +181,9 @@ class BrowserSession(
      */
     fun touchButton(keyCode: Int, down: Boolean) {
         val web = current?.web ?: return
-        val mode = controllerMode
-        if (mode.feedsGamepad()) pads.onTouch(keyCode, down)
-        val keys = if (mode == ControllerMode.Auto) {
-            if (down) !pads.pagePolls else keyCode in autoKeys
-        } else mode.sendsKeys(pads.pagePolls)
-        if (mode == ControllerMode.Auto) if (down && keys) autoKeys += keyCode else autoKeys -= keyCode
-        if (!keys) return
+        // A release always reaches the pad, so no button stays held after a mode change.
+        if (!down || controllerMode.feedsGamepad()) pads.onTouch(keyCode, down)
+        if (!keysFor(keyCode, down, touchKeys)) return
         val mapped = Gamepad.map(keyCode) ?: return
         if (!web.hasFocus()) web.requestFocus()
         val now = SystemClock.uptimeMillis()
@@ -453,6 +481,7 @@ class BrowserSession(
         // Keep gestures in the page: parents (the home pager, scrolling panels) mustn't take them.
         setOnTouchListener { v, event ->
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                tab.lastInputAt = SystemClock.uptimeMillis()
                 v.parent?.requestDisallowInterceptTouchEvent(true)
                 if (!v.hasFocus()) v.requestFocus()
             }
@@ -466,15 +495,16 @@ class BrowserSession(
         webViewClient = TabClient(tab)
         webChromeClient = TabChrome(tab)
         if (gamepad) {
-            installGamepad(this)
+            installGamepad(this, tab)
             addJavascriptInterface(pads.Bridge(), "KittPad")
         }
         addJavascriptInterface(WebMedia.bridgeFor(this, tab), "KittMedia")
         setDownloadListener { url, userAgent, disposition, mimetype, _ ->
             when {
                 StreamUrls.isUserscript(url) || mimetype == "text/x-userscript" -> pendingInstall = url
-                // Emulator apps, homebrew ROMs, files: saved to Downloads/KITT; APKs offer to install.
-                else -> downloadMessage = BrowserDownloads.enqueue(context, url, userAgent, disposition, mimetype)
+                // Emulator apps, homebrew ROMs, files: offered on the bar, saved to Downloads/KITT on SAVE.
+                // Cookies from this tab's own profile (the default one has none of its sign-ins).
+                else -> pendingDownload = PendingDownload(url, userAgent, disposition, mimetype, cookiesFor(this, url))
             }
         }
     }
@@ -485,7 +515,7 @@ class BrowserSession(
      * by [controllerMode]. Auto picks per button press: gamepad while the page is reading
      * gamepads, keys otherwise.
      */
-    private fun installGamepad(web: WebView) {
+    private fun installGamepad(web: WebView, tab: BrowserTab) {
         val held = mutableSetOf<Int>()
         fun send(action: Int, keyCode: Int) {
             val now = SystemClock.uptimeMillis()
@@ -493,13 +523,11 @@ class BrowserSession(
         }
         web.setOnKeyListener { _, keyCode, event ->
             if (!VirtualPads.isController(event)) return@setOnKeyListener false
-            val mode = controllerMode
             val down = event.action == KeyEvent.ACTION_DOWN
-            val padded = mode.feedsGamepad() && pads.onKey(event)
-            val keys = if (mode == ControllerMode.Auto) {
-                if (down) !pads.pagePolls else keyCode in autoKeys
-            } else mode.sendsKeys(pads.pagePolls)
-            if (mode == ControllerMode.Auto) if (down && keys) autoKeys += keyCode else autoKeys -= keyCode
+            if (down) tab.lastInputAt = SystemClock.uptimeMillis()
+            // A release always reaches the pad and goes out as a key if the press did.
+            val padded = (!down || controllerMode.feedsGamepad()) && pads.onKey(event)
+            val keys = keysFor(keyCode, down, padKeys)
             val mapped = Gamepad.map(keyCode)
             when {
                 // The D-pad already arrives as arrow keys: let it through when keys are wanted.
@@ -547,9 +575,12 @@ class BrowserSession(
                 countBlocked()
                 return true
             }
+            // Sign-in hops (Google, Microsoft…) always pass, like sign-in pop-ups, and so does a
+            // script's hand-off right after a tap (a game launcher opening its emulator elsewhere).
             val from = view.url
-            if (holdPopups && !request.hasGesture() && !request.isRedirect && from != null && from.startsWith("http") &&
-                !SiteHomeRules.sameSite(from, target)
+            val tapped = request.hasGesture() || SystemClock.uptimeMillis() - tab.lastInputAt < INPUT_GRACE_MS
+            if (holdPopups && !tapped && !request.isRedirect && from != null && from.startsWith("http") &&
+                !SiteHomeRules.sameSite(from, target) && !SiteHomeRules.isSignIn(target) && !SiteHomeRules.isSignIn(from)
             ) {
                 blockedPopup = target
                 return true
@@ -599,8 +630,10 @@ class BrowserSession(
         }
 
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (request.isForMainFrame || !blocksAds(tab) || !AdBlock.isBlocked(request.url.host)) return null
+            if (!blocksAds(tab) || !AdBlock.isBlocked(request.url.host)) return null
             countBlocked()
+            // A whole page from an ad host (e.g. a form post shouldOverrideUrlLoading never sees) loads blank.
+            if (request.isForMainFrame) return WebResourceResponse("text/html", "utf-8", ByteArrayInputStream(ByteArray(0)))
             // Scripts get a stand-in (or an empty script): game and video pages often wait on an
             // ad library's callback before they start, and would hang on a missing script.
             val path = request.url.path.orEmpty()
@@ -700,6 +733,9 @@ class BrowserSession(
     private companion object {
         const val TAG = "Browser"
         const val AGENT_RELOAD_GAP_MS = 5_000L
+
+        /** A script's move to another site this soon after a tap (a game's Play button) isn't an ad. */
+        const val INPUT_GRACE_MS = 5_000L
         const val CONSOLE_WINDOW_MS = 10_000L
         const val CONSOLE_MAX_PER_WINDOW = 20
     }

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.WebViewCompat
 import com.aiconsole.knightriderlauncher.KittApplication
+import com.aiconsole.knightriderlauncher.browser.BrowserDownloads
 import com.aiconsole.knightriderlauncher.browser.BrowserSession
 import com.aiconsole.knightriderlauncher.browser.BrowserTab
 import com.aiconsole.knightriderlauncher.browser.PageScripts
@@ -116,6 +117,7 @@ fun BrowserView(
     val webViewVersion = remember { runCatching { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }.getOrNull() }
     val fullscreen = session.fullscreenView
     val current = session.current
+    val readyApk by BrowserDownloads.readyApk.collectAsState()
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // Held pop-ups and downloads, so nothing a site does goes unnoticed.
@@ -124,6 +126,21 @@ fun BrowserView(
                 HelpText("Pop-up held back: ${StreamUrls.titleOf(url)}", Modifier.weight(1f), color = DashAmber)
                 KittButton("Open", { session.openBlockedPopup() }, Modifier.height(32.dp).width(72.dp), DashAmber)
                 KittButton("✕", { session.blockedPopup = null }, Modifier.height(32.dp).width(40.dp), DashGrey)
+            }
+        }
+        // Nothing is saved, and no installer opens, until the driver taps.
+        session.pendingDownload?.let { d ->
+            Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                HelpText("Save file? ${d.name} (${StreamUrls.titleOf(d.url)})", Modifier.weight(1f), color = DashAmber)
+                KittButton("Save", { session.saveDownload(context) }, Modifier.height(32.dp).width(72.dp), DashAmber)
+                KittButton("✕", { session.pendingDownload = null }, Modifier.height(32.dp).width(40.dp), DashGrey)
+            }
+        }
+        readyApk?.let { apk ->
+            Row(Modifier.fillMaxWidth().height(36.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                HelpText("${apk.name} downloaded. Install it? (Not while driving.)", Modifier.weight(1f), color = LedGreen)
+                KittButton("Install", { BrowserDownloads.install(context, apk) }, Modifier.height(32.dp).width(88.dp), LedGreen)
+                KittButton("✕", { BrowserDownloads.dismissApk() }, Modifier.height(32.dp).width(40.dp), DashGrey)
             }
         }
         session.downloadMessage?.let { m ->
