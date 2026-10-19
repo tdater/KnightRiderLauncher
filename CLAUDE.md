@@ -65,7 +65,7 @@ $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 .\gradlew.bat lintDebug    # text report: app/build/intermediates/lint_intermediate_text_report/
 ```
 
-CI: `.github/workflows/android.yml` runs tests, lint and the debug build; with signing secrets (`KITT_KEYSTORE_BASE64` etc.) it also builds a signed release, published on `v*` tags for the in-app updater. CI sets `versionCode` from the run number.
+CI: `.github/workflows/android.yml` runs tests, lint and the debug build; with signing secrets (`KITT_KEYSTORE_BASE64` etc.) it also builds a signed release, published on `v*` tags to `tdater/KITT-Launcher-releases` (needs the `RELEASES_TOKEN` secret, which is set) for the in-app updater. CI sets `versionCode` from the run number.
 
 Toolchain: AGP 9.x with **built-in Kotlin** (no `kotlin-android` plugin), Compose BOM, KSP 2.3.x (decoupled from Kotlin version) for Room, OkHttp 5. Versions live in `gradle/libs.versions.toml`. minSdk 24, target/compile 37.
 
@@ -90,7 +90,7 @@ There's no DI framework. Composables that need them do `LocalContext.current.app
 **UI shell** (`MainActivity.kt`):
 - **`LauncherRoot`:** a permanent `KittScanner` strip (doubles as a shift light; 12–22 dp by screen height), then a `BoxWithConstraints` holding a `HorizontalPager` of `HomePage`s.
   - **Portrait (the owner's 12.1" unit):** page tabs and the stacked `ControlDock`.
-  - **Landscape (`DeviceProfile.useRail`):** `NavRail` (KITT + page buttons) on the left, pages, and the one-row `DockBar` (in `ControlDock.kt`) below. Shared with KITT Launcher.2 (`../KITTLauncher2`, the 7"–10" landscape fork, package `com.aiconsole.kittlauncher2`); keep improvements in both.
+  - **Landscape (`DeviceProfile.useRail`):** `NavRail` (KITT + page buttons) on the left, pages, and the one-row `DockBar` (in `ControlDock.kt`) below. Shared with KITT Launcher.2 (`../KITT-Launcher.2`, the 7"–10" landscape fork, package `com.aiconsole.kittlauncher2`); keep improvements in both, and add them to the features page in the releases repo.
   - **Screen size (`UiScale`):** `MainActivity` overrides `LocalDensity` by `DeviceProfile.scale`; Auto changes only landscape screens, portrait keeps its density.
   - **Lite mode (`LiteMode`, `KittApplication.lite`, `LocalLiteMode`):** Auto from `lowEndDevice` (≤ 3 GB RAM, ≤ 4 cores or the low-RAM flag; the owner's 8 GB / 8-core unit runs Full). Lite caps the scanner and overlay at 30 fps, freezes idle animations, drops the Matrix rain, keeps fewer WebViews and skips off-screen pre-raster. New animations must stand still when idle and respect `LocalLiteMode`.
   - **Drive:** tall screens (height ≥ 1.2× width) stack map 50% / grid 35%; wide screens put them side by side. The grid shows pinned favourites, else all non-hidden apps (`AppLists`).
