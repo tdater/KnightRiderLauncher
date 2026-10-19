@@ -1,3 +1,8 @@
+> **Retired (October 2026).** KITT Launcher is now built from the same code as KITT Launcher.2, in
+> [tdater/KITT-Launcher.2](https://github.com/tdater/KITT-Launcher.2) (product flavor `kitt`, same app ID
+> `com.aiconsole.knightriderlauncher`). Installed copies keep updating from KITT Config → Updates.
+> This repo stays at v1.7 for reference; make changes there.
+
 # KITT Launcher
 
 A Knight Rider (KITT) themed Android home-screen launcher for aftermarket car head units, built

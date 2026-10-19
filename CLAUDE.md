@@ -1,3 +1,5 @@
+> **Retired:** this codebase stopped at v1.7. KITT Launcher is now the `kitt` flavor of `../KITT-Launcher.2` (see its CLAUDE.md). Make every change there, not here.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
